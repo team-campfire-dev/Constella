@@ -1,0 +1,33 @@
+{
+    "Navbar": {
+        "title": "Constella",
+        "signIn": "Sign in",
+        "signedInAs": "Signed in as",
+        "yourProfile": "Your Profile",
+        "signOut": "Sign out"
+    },
+    "Home": {
+        "welcome": "Welcome",
+        "description": "This is a protected page. You can only see this if you are logged in."
+    },
+    "Login": {
+        "title": "Sign in to your account",
+        "signInGoogle": "Sign in with Google"
+    },
+    "Profile": {
+        "title": "User Info",
+        "description": "Personal details and application.",
+        "editProfile": "Edit Profile",
+        "avatar": "Avatar",
+        "fullName": "Full name",
+        "email": "Email address"
+    },
+    "ProfileEdit": {
+        "title": "Profile",
+        "description": "This information will be displayed publicly so be careful what you share.",
+        "save": "Save",
+        "emailLabel": "Email",
+        "emailHelp": "Email cannot be changed.",
+        "nameLabel": "Name"
+    }
+}

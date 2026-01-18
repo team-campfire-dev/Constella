@@ -1,0 +1,33 @@
+{
+    "Navbar": {
+        "title": "Constella",
+        "signIn": "로그인",
+        "signedInAs": "로그인 계정",
+        "yourProfile": "내 프로필",
+        "signOut": "로그아웃"
+    },
+    "Home": {
+        "welcome": "환영합니다",
+        "description": "이 페이지는 로그인한 사용자만 볼 수 있습니다."
+    },
+    "Login": {
+        "title": "계정에 로그인하세요",
+        "signInGoogle": "Google로 로그인"
+    },
+    "Profile": {
+        "title": "사용자 정보",
+        "description": "개인 상세 정보 및 애플리케이션 정보입니다.",
+        "editProfile": "프로필 수정",
+        "avatar": "아바타",
+        "fullName": "이름",
+        "email": "이메일 주소"
+    },
+    "ProfileEdit": {
+        "title": "프로필",
+        "description": "이 정보는 공개적으로 표시되므로 공유할 때 주의하세요.",
+        "save": "저장",
+        "emailLabel": "이메일",
+        "emailHelp": "이메일은 변경할 수 없습니다.",
+        "nameLabel": "이름"
+    }
+}
