@@ -1,8 +1,4 @@
-import { Link } from '@/i18n/navigation' // We need to create this first or standard next-intl link?
-// Standard next-intl doesn't export Link from main pkg directly in recent versions without config?
-// Actually simpler to use: import Link from 'next/link' but it won't handle locale prefix?
-// Let's use generic implementation first or confirm if we need a navigation wrapper.
-// next-intl 3.0 recommends defining navigation wrapper.
+import { Link } from '@/i18n/navigation'
 
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"

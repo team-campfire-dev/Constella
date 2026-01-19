@@ -18,15 +18,12 @@ export function getDriver(): Driver {
 export async function getGraphData() {
     const driver = getDriver();
 
-    // Use the specific database 'Constella'
-    // If it doesn't exist, this might fail unless we create it. 
-    // Usually handled by admin, but we can try-catch or assume user created it.
-    // Community Edition only supports default database ('neo4j')
+    // Constella 데이터베이스는 Community Edition에서 지원되지 않으므로 기본 DB 사용
+    // 별도 로직으로 데이터 격리 필요 시 레이블(Label) 등을 활용 권장
     const session = driver.session();
 
     try {
-        // Query to fetch all nodes and relationships
-        // Adjust the LIMIT as needed
+        // 노드 및 관계 조회 (최대 100개)
         const result = await session.run(`
             MATCH (n)
             OPTIONAL MATCH (n)-[r]->(m)

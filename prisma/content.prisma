@@ -1,0 +1,18 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client-content"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_CONTENT_URL")
+}
+
+model WikiArticle {
+  id        String   @id @default(cuid())
+  title     String   @unique
+  content   String   @db.Text
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
