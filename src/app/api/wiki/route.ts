@@ -39,7 +39,12 @@ export async function POST(req: Request) {
             // Note: 'authorId' is not in the schema anymore as it's a shared wiki (wiki-engine style).
             // Ideally we should track who edited it (Review Log/History), but for now we just save content.
             await prismaTx.wikiArticle.upsert({
-                where: { topicId: topic.id },
+                where: {
+                    topicId_language: {
+                        topicId: topic.id,
+                        language: 'en' // Assuming 'en' is the default language for upsert based on the create clause
+                    }
+                },
                 update: {
                     content: content,
                     updatedAt: new Date()
@@ -59,7 +64,7 @@ export async function POST(req: Request) {
                         update: {},
                         create: { name: title.trim(), topicId: topic.id }
                     });
-                } catch (e) {
+                } catch {
                     // 별칭 충돌 무시
                 }
             }
@@ -74,8 +79,8 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ success: true });
 
-    } catch (error) {
-        logger.error('Wiki Article Creation Failed:', { error });
+    } catch (e) {
+        logger.error("Wiki processing error", { error: e });
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

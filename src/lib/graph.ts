@@ -1,4 +1,4 @@
-import { getDriver } from './neo4j';
+// import { getDriver } from './neo4j';
 import { Transaction } from 'neo4j-driver';
 
 /**

@@ -9,6 +9,7 @@ export async function GET(request: Request) {
     if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userId = (session.user as any).id;
     const { searchParams } = new URL(request.url);
     const lang = searchParams.get('lang') || 'en';

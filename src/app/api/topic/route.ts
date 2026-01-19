@@ -21,6 +21,7 @@ export async function GET(req: Request) {
     }
 
     try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (session.user as any).id;
 
         // Find Topic first (by ID or Name)

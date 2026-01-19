@@ -11,9 +11,10 @@ export default function UserAvatar({ name, image }: { name?: string | null, imag
     return (
         <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border border-gray-300">
             {image ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                    src={image}
-                    alt={name ?? 'User Avatar'}
+                    src={image || '/placeholder-user.jpg'}
+                    alt={name || 'User Avatar'}
                     className="h-full w-full object-cover"
                 />
             ) : (

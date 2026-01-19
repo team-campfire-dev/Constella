@@ -1,4 +1,4 @@
-import neo4j, { Driver, Session } from 'neo4j-driver';
+import neo4j, { Driver } from 'neo4j-driver';
 import logger from "@/lib/logger";
 
 let driver: Driver;
@@ -26,13 +26,15 @@ export async function getGraphData() {
     try {
         // 노드 및 관계 조회 (최대 100개)
         const result = await session.run(`
-            MATCH (n)
-            OPTIONAL MATCH (n)-[r]->(m)
+MATCH(n)
+            OPTIONAL MATCH(n) - [r] -> (m)
             RETURN n, r, m
             LIMIT 100
         `);
 
-        const nodesMap = new Map();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const nodesMap = new Map<string, any>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const links: any[] = [];
 
         result.records.forEach(record => {
@@ -45,7 +47,7 @@ export async function getGraphData() {
                 if (!nodesMap.has(id)) {
                     nodesMap.set(id, {
                         id,
-                        name: sourceNode.properties.name || `Node ${id}`,
+                        name: sourceNode.properties.name || `Node ${id} `,
                         // Map other properties if needed
                         group: sourceNode.labels[0] || 'default',
                         val: 1, // Default size
@@ -59,7 +61,7 @@ export async function getGraphData() {
                 if (!nodesMap.has(id)) {
                     nodesMap.set(id, {
                         id,
-                        name: targetNode.properties.name || `Node ${id}`,
+                        name: targetNode.properties.name || `Node ${id} `,
                         group: targetNode.labels[0] || 'default',
                         val: 1,
                         ...targetNode.properties

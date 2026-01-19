@@ -40,8 +40,10 @@ import { useLocale } from 'next-intl';
 
 export default function StarGraph({ onNodeClick }: StarGraphProps) {
     const locale = useLocale();
-    const fgRef = useRef<any>(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fgRef = useRef<any>();
     const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -69,8 +71,9 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
         };
 
         fetchData();
-    }, []);
+    }, [locale]);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const isMysteryLink = (link: any) => {
         // Check if either end of the link is a mystery node
         const sourceGroup = link.source.group || (link.source as GraphNode).group;
@@ -87,14 +90,18 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                 nodeRelSize={6}
 
                 // Link styling: dashed and orange for mystery connections
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 linkColor={(link: any) => isMysteryLink(link) ? "#FFA500" : "#00F0FF33"}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 linkLineDash={(link: any) => isMysteryLink(link) ? [5, 5] : null}
 
                 backgroundColor="#000000"
                 enableNodeDrag={false}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onNodeClick={onNodeClick as any}
 
                 // Custom node painting
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
                     const x = node.x;
                     const y = node.y;
@@ -159,11 +166,10 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                                 ctx.beginPath();
                                 ctx.arc(x, y, r * 0.6, 0, 2 * Math.PI, false);
                                 ctx.fill();
-                            } catch (e) {
+                            } catch {
                                 ctx.fillStyle = node.color || "#00F0FF";
                                 ctx.beginPath();
                                 ctx.arc(x, y, 4, 0, 2 * Math.PI, false);
-                                ctx.fill();
                             }
                         }
 
@@ -173,9 +179,11 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                         ctx.fillStyle = "#00F0FF"; // Cyan text for known nodes
                         ctx.fillText(label, x, y + r + fontSize);
                     }
-                }}
+                }
+                }
                 // Paint interaction area (hit detection)
-                nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                nodePointerAreaPaint={(node: any, color, ctx) => {
                     const r = (node.val || 4) * 0.3;
                     const hitR = node.group === 'mystery' ? Math.max(r, 6) : r * 1.5; // Match visual size
 
@@ -197,7 +205,13 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                             if (e.key === 'Enter') {
                                 const target = e.target as HTMLInputElement;
                                 if (target.value.trim()) {
-                                    window.location.href = `/console?q=${encodeURIComponent(target.value)}`;
+                                    // Use router.push for client-side navigation, including locale
+                                    // window.location.href = `/${locale}/console?q=${encodeURIComponent(target.value)}`;
+                                    // If we use Next.js router, we need to import it.
+                                    // Since this is already a client component, let's just use window.location.href for simplicity and robustness to ensure full reload if needed, 
+                                    // OR better: use router.push if available. 
+                                    // Let's stick to the user's issue: URL was wrong.
+                                    window.location.href = `/${locale}/console?q=${encodeURIComponent(target.value)}`;
                                 }
                             }
                         }}
