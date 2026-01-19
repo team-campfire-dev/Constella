@@ -29,5 +29,15 @@
         "emailLabel": "Email",
         "emailHelp": "Email cannot be changed.",
         "nameLabel": "Name"
+    },
+    "StarMap": {
+        "title": "Star Map",
+        "menu": {
+            "starMap": "Star Map",
+            "shipLog": "Ship Log",
+            "commsConsole": "Comms Console"
+        },
+        "cardTitle": "Star Map",
+        "inputPlaceholder": "Transmitting signal..."
     }
 }

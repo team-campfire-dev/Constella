@@ -29,5 +29,15 @@
         "emailLabel": "이메일",
         "emailHelp": "이메일은 변경할 수 없습니다.",
         "nameLabel": "이름"
+    },
+    "StarMap": {
+        "title": "별자리 지도",
+        "menu": {
+            "starMap": "별자리 지도",
+            "shipLog": "항해 일지",
+            "commsConsole": "통신 콘솔"
+        },
+        "cardTitle": "별자리 지도",
+        "inputPlaceholder": "신호 전송 중..."
     }
 }

@@ -1,26 +1,28 @@
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { redirect } from "@/i18n/navigation"
-import SignOutButton from "@/components/SignOutButton"
 import { getTranslations } from "next-intl/server"
+import DashboardLayout from '@/components/DashboardLayout';
+import StarGraph from '@/components/StarGraph';
 
 export default async function Home() {
   const session = await getServerSession(authOptions)
-  const t = await getTranslations('Home')
+  const t = await getTranslations('StarMap')
 
   if (!session) {
     redirect({ href: "/login", locale: "ko" });
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <div>
-          <h1 className="text-2xl font-bold">{t('welcome')}, {session.user?.email}</h1>
-          <p>{t('description')}</p>
+    <DashboardLayout>
+      <div className="p-6 h-full flex flex-col">
+        <div className="mb-4">
+          <h1 className="text-xl font-bold text-gray-100">{t('cardTitle')}</h1>
         </div>
-        <SignOutButton />
+        <div className="flex-1 min-h-0">
+          <StarGraph />
+        </div>
       </div>
-    </main>
+    </DashboardLayout>
   )
 }
