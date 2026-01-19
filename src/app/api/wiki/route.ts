@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import logger from "@/lib/logger";
 import { withDualTransaction } from '@/lib/transaction';
 import { syncArticleToGraph } from '@/lib/graph';
 
@@ -74,7 +75,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
 
     } catch (error) {
-        console.error('Wiki Article Creation Failed:', error);
+        logger.error('Wiki Article Creation Failed:', { error });
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

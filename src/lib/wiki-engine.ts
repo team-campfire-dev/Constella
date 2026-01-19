@@ -3,8 +3,10 @@ import prismaContent from '@/lib/prisma-content'; // Content DB
 import { withDualTransaction } from '@/lib/transaction';
 import { syncArticleToGraph } from '@/lib/graph';
 import { generateWikiContent } from '@/lib/gemini';
+import logger from "@/lib/logger";
 
 interface WikiResponse {
+    answer: string;
     content: string;
     isNew: boolean;
     topicId: string;
@@ -23,14 +25,14 @@ export async function processUserQuery(userId: string, query: string, language: 
     // 1. 별칭(Alias)을 통해 주제(Topic) 찾기
     let topic = await prismaContent.topic.findUnique({
         where: { name: normalizedName },
-        include: { article: true }
+        include: { articles: { where: { language } } }
     });
 
     // 이름으로 찾지 못한 경우 별칭 테이블 검색
     if (!topic) {
         const alias = await prismaContent.alias.findUnique({
             where: { name: query.trim() },
-            include: { topic: { include: { article: true } } }
+            include: { topic: { include: { articles: { where: { language } } } } }
         });
         if (alias) {
             topic = alias.topic;
@@ -43,20 +45,29 @@ export async function processUserQuery(userId: string, query: string, language: 
     threeMonthsAgo.setMonth(now.getMonth() - 3);
 
     let content = "";
+    let answer = "";
     let isNew = false;
     let topicId = topic?.id;
 
+    // 기사(Article) 찾기
+    const article = topic?.articles?.[0]; // Prism returns array because of 1:N but we filtered by specific language so max 1
+
     // 주제가 없거나, 기사가 없거나, 기사가 3개월 이상 된 경우 재생성 필요
-    const needsGeneration = !topic || !topic.article || topic.article.updatedAt < threeMonthsAgo;
+    const needsGeneration = !topic || !article || article.updatedAt < threeMonthsAgo;
 
     if (needsGeneration) {
-        console.log(`[WikiEngine] 콘텐츠 생성 중: ${query}`);
+        logger.info(`[WikiEngine] 콘텐츠 생성 중: ${query} (언어: ${language})`);
 
         // 3. AI 콘텐츠 생성
         const generated = await generateWikiContent(query, language);
         content = generated.content;
-        const extractedTopicName = generated.topic.trim();
-        const mainTopicName = extractedTopicName.toLowerCase(); // DB Key
+        answer = generated.chatResponse;
+
+        // Canonical Name 사용 (중복 방지)
+        const canonicalName = generated.canonicalName || generated.topic;
+        const mainTopicName = canonicalName.trim().toLowerCase(); // DB Key
+        const extractedTopicName = generated.topic.trim(); // Original extracted topic
+        const tags = generated.tags || [];
 
         // 링크 파싱 [[Keyword]]
         const linkRegex = /\[\[(.*?)\]\]/g;
@@ -65,17 +76,38 @@ export async function processUserQuery(userId: string, query: string, language: 
 
         // 4. 듀얼 트랜잭션 (Content DB + Neo4j)
         const savedTopic = await withDualTransaction(async (prismaTx, neo4jTx) => {
-            // A. 주제(Topic) 생성 또는 업데이트 (AI가 추출한 주제명 사용)
+            // A. 주제(Topic) 생성 또는 업데이트
+            // Note: If topic exists, we just update tags. If not, create.
             const t = await prismaTx.topic.upsert({
                 where: { name: mainTopicName },
-                update: {},
-                create: { name: mainTopicName }
+                update: {
+                    tags: {
+                        connectOrCreate: tags.map(tag => ({
+                            where: { name: tag },
+                            create: { name: tag }
+                        }))
+                    }
+                },
+                create: {
+                    name: mainTopicName,
+                    tags: {
+                        connectOrCreate: tags.map(tag => ({
+                            where: { name: tag },
+                            create: { name: tag }
+                        }))
+                    }
+                }
             });
 
-            // B. 기사(Article) 생성 또는 업데이트
+            // B. 기사(Article) 생성 또는 업데이트 (Composite Key: topicId + language)
             await prismaTx.wikiArticle.upsert({
-                where: { topicId: t.id },
-                update: { content, language },
+                where: {
+                    topicId_language: {
+                        topicId: t.id,
+                        language: language
+                    }
+                },
+                update: { content, language }, // Language shouldn't verify update but safe
                 create: { topicId: t.id, content, language }
             });
 
@@ -93,9 +125,8 @@ export async function processUserQuery(userId: string, query: string, language: 
                 }
             }
 
-            // 2) AI가 추출한 주제의 원본 표기 (대소문자 포함) -> 주제
-            // 예: "Black Hole" (Alias) -> "black hole" (Topic)
-            if (extractedTopicName !== mainTopicName) {
+            // 2) AI가 추출한 짧은 주제명 (generated.topic) -> 주제
+            if (extractedTopicName.toLowerCase() !== mainTopicName) {
                 try {
                     await prismaTx.alias.upsert({
                         where: { name: extractedTopicName },
@@ -108,7 +139,12 @@ export async function processUserQuery(userId: string, query: string, language: 
             }
 
             // D. Neo4j 그래프 동기화
-            await syncArticleToGraph(neo4jTx, mainTopicName, linkedKeywords);
+            // Graph represents CONCEPTS, so language agnostic logic is better?
+            // Actually, node.name is mainTopicName (e.g. "black hole").
+            // If user queries "블랙홀", canonical is "black hole" (if mapped).
+            // But if "블랙홀" is the canonical name (e.g. first discovery was in KR), node name is "블랙홀".
+            // It's acceptable for now.
+            await syncArticleToGraph(neo4jTx, mainTopicName, linkedKeywords, tags);
 
             return t;
         });
@@ -117,14 +153,14 @@ export async function processUserQuery(userId: string, query: string, language: 
         isNew = true;
     } else {
         // 캐시된 콘텐츠 반환
-        content = topic!.article!.content;
+        content = article!.content;
+        // 캐시된 경우 채팅 답변 생성
+        answer = `**[ARCHIVE RETRIEVED]**\n\n기록 보관소에서 *"${topic!.name}"*에 대한 데이터를 찾았습니다.\n\n---\n\n${content}`;
         topicId = topic!.id;
     }
 
     // 5. 탐사 기록(ShipLog) 업데이트 (Content DB - constella)
-    // 트랜잭션 외부에서 실행 (발견 자체는 성공/실패가 콘텐츠 생성에 영향을 주지 않도록)
     try {
-        // Ensure User exists in Content DB (Sync purpose)
         await prismaContent.user.upsert({
             where: { id: userId },
             update: {},
@@ -139,9 +175,8 @@ export async function processUserQuery(userId: string, query: string, language: 
             }
         });
     } catch (e) {
-        console.error("[WikiEngine] ShipLog 업데이트 실패:", e);
-        // 이미 발견한 경우(Unique 제약조건) 무시
+        logger.error("[WikiEngine] ShipLog 업데이트 실패:", { error: e instanceof Error ? e.message : e });
     }
 
-    return { content, isNew, topicId: topicId! };
+    return { answer, content, isNew, topicId: topicId! };
 }

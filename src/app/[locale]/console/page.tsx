@@ -92,7 +92,7 @@ export default function ConsolePage() {
                 const aiMsg: Message = {
                     id: (Date.now() + 1).toString(),
                     role: 'assistant',
-                    content: data.data.content,
+                    content: data.content,
                     timestamp: new Date()
                 };
                 setMessages(prev => [...prev, aiMsg]);

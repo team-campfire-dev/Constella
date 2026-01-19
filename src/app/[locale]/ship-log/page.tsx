@@ -12,10 +12,13 @@ interface ShipLogEntry {
     lastUpdated: string | null;
 }
 
+import KnowledgePanel from '@/components/KnowledgePanel';
+
 export default function ShipLogPage() {
     const t = useTranslations('ShipLog');
     const [logs, setLogs] = useState<ShipLogEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
 
     useEffect(() => {
         fetch('/api/ship-log')
@@ -42,7 +45,7 @@ export default function ShipLogPage() {
 
     return (
         <DashboardLayout>
-            <div className="p-8 h-full flex flex-col text-white">
+            <div className="p-8 h-full flex flex-col text-white relative">
                 <h1 className="text-3xl font-bold mb-6 text-cyan-400 font-mono uppercase tracking-widest border-b border-cyan-500/30 pb-4">
                     {t('title')}
                 </h1>
@@ -56,7 +59,7 @@ export default function ShipLogPage() {
                         {logs.map(log => (
                             <div key={log.id}
                                 className="bg-slate-900/50 border border-cyan-500/30 p-4 rounded-lg hover:bg-cyan-900/20 transition-all cursor-pointer group"
-                                onClick={() => window.location.href = `/console?q=${log.name}`}
+                                onClick={() => setSelectedTopicId(log.topicId)}
                             >
                                 <h2 className="text-xl font-bold text-cyan-200 group-hover:text-cyan-100 mb-2 capitalize">
                                     {log.name}
@@ -64,13 +67,18 @@ export default function ShipLogPage() {
                                 <div className="text-xs text-cyan-600/80 font-mono flex justify-between">
                                     <span>{new Date(log.discoveredAt).toLocaleDateString()}</span>
                                     <span className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                        OPEN CONSOLE &gt;
+                                        VIEW DATA &gt;
                                     </span>
                                 </div>
                             </div>
                         ))}
                     </div>
                 )}
+
+                <KnowledgePanel
+                    topicId={selectedTopicId}
+                    onClose={() => setSelectedTopicId(null)}
+                />
             </div>
         </DashboardLayout>
     );

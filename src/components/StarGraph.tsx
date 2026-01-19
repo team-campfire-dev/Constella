@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 
 // Define types for Node and Link
-interface GraphNode {
+export interface GraphNode {
     id: number | string;
     name: string;
     val: number;
@@ -24,13 +24,16 @@ interface GraphData {
     links: GraphLink[];
 }
 
-// ForceGraph2D must be imported dynamically because it depends on window/canvas
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
     ssr: false,
     loading: () => <div className="flex items-center justify-center h-full text-[#38BDF8]">Loading Star Map...</div>
 });
 
-export default function StarGraph() {
+interface StarGraphProps {
+    onNodeClick?: (node: GraphNode) => void;
+}
+
+export default function StarGraph({ onNodeClick }: StarGraphProps) {
     const fgRef = useRef<any>(null);
     const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
     const [loading, setLoading] = useState(true);
@@ -83,6 +86,7 @@ export default function StarGraph() {
 
                 backgroundColor="#000000"
                 enableNodeDrag={false}
+                onNodeClick={onNodeClick as any}
 
                 // Custom node painting
                 nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -95,18 +99,22 @@ export default function StarGraph() {
                     const fontSize = 12 / globalScale;
                     ctx.font = `${fontSize}px Sans-Serif`;
 
-                    // Size calculation
-                    const r = node.val ? node.val * 2 : 4;
+                    // Size calculation (Scaled down significantly)
+                    const r = (node.val || 4) * 0.3;
 
                     if (node.group === 'mystery') {
                         // Mystery Node Style: Dashed Orange Outline, Transparent Fill, "?" Center
 
+                        // Size adjustment for visibility
+                        // Ensure the outline is at least visible enough to contain the "?"
+                        const visualR = Math.max(r, 6);
+
                         // Dashed Outline
                         ctx.beginPath();
-                        ctx.setLineDash([5, 5]);
-                        ctx.lineWidth = 2; // Thicker border
+                        ctx.setLineDash([2, 2]); // Tighter dashes
+                        ctx.lineWidth = 1; // Thinner line
                         ctx.strokeStyle = '#FFA500';
-                        ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI, false); // Slightly larger
+                        ctx.arc(x, y, visualR, 0, 2 * Math.PI, false);
                         ctx.stroke();
                         ctx.setLineDash([]); // Reset dash for other elements
 
@@ -114,33 +122,36 @@ export default function StarGraph() {
                         ctx.fillStyle = '#FFA500';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
-                        // Draw ? larger
-                        ctx.font = `bold ${fontSize * 1.5}px Sans-Serif`;
-                        ctx.fillText("?", x, y);
 
-                        // Label below node (Name like "Project Purple")
+                        // Keep text readable: min 10px, max restricted slightly so it doesn't look huge
+                        // But allow scaling with zoom
+                        const textSz = Math.max(fontSize, 10);
+                        ctx.font = `bold ${textSz}px Sans-Serif`;
+                        ctx.fillText("?", x, y - 0.5); // Slight optical centering
+
+                        // Label below node (Name like "Black Hole") - Restore label as requested
                         ctx.font = `${fontSize}px Sans-Serif`;
-                        ctx.fillStyle = '#FFA500'; // Orange text for mystery label
-                        ctx.fillText(label, x, y + r * 1.5 + fontSize);
+                        ctx.fillStyle = '#FFA500'; // Orange text
+                        ctx.fillText(label, x, y + r + fontSize + 2); // Position below
 
                     } else {
                         // Known Node Style: Solid Cyan Core, Glow
 
                         if (Number.isFinite(r) && r > 0) {
                             try {
-                                const gradient = ctx.createRadialGradient(x, y, r * 0.5, x, y, r * 2);
+                                const gradient = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 1.5);
                                 gradient.addColorStop(0, node.color || "#00F0FF");
                                 gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
 
                                 ctx.fillStyle = gradient;
                                 ctx.beginPath();
-                                ctx.arc(x, y, r * 2, 0, 2 * Math.PI, false);
+                                ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI, false); // Glow slightly larger
                                 ctx.fill();
 
                                 // Solid core
                                 ctx.fillStyle = node.color || "#00F0FF";
                                 ctx.beginPath();
-                                ctx.arc(x, y, r * 0.5, 0, 2 * Math.PI, false);
+                                ctx.arc(x, y, r * 0.6, 0, 2 * Math.PI, false);
                                 ctx.fill();
                             } catch (e) {
                                 ctx.fillStyle = node.color || "#00F0FF";
@@ -156,6 +167,16 @@ export default function StarGraph() {
                         ctx.fillStyle = "#00F0FF"; // Cyan text for known nodes
                         ctx.fillText(label, x, y + r + fontSize);
                     }
+                }}
+                // Paint interaction area (hit detection)
+                nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+                    const r = (node.val || 4) * 0.3;
+                    const hitR = node.group === 'mystery' ? Math.max(r, 6) : r * 1.5; // Match visual size
+
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, hitR + 2, 0, 2 * Math.PI, false); // Slightly larger for better UX
+                    ctx.fill();
                 }}
             />
 

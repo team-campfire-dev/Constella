@@ -12,11 +12,19 @@ model Topic {
   id        String       @id @default(cuid())
   name      String       @unique // Normalized name (lowercase)
   aliases   Alias[]
-  article   WikiArticle?
+  articles  WikiArticle[]
   shipLogs  ShipLog[]
+  tags      Tag[]
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 }
+
+model Tag {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  topics Topic[]
+}
+
 
 model Alias {
   id        String   @id @default(cuid())
@@ -56,9 +64,11 @@ model ShipLog {
 
 model WikiArticle {
   id        String   @id @default(cuid())
-  topicId   String   @unique
+  topicId   String
   topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
   content   String   @db.Text
   language  String   @default("en")
   updatedAt DateTime @updatedAt
+  
+  @@unique([topicId, language])
 }

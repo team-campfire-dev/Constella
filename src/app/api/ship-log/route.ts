@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
+import logger from "@/lib/logger";
 
 export async function GET() {
     const session = await getServerSession(authOptions);
@@ -15,9 +16,7 @@ export async function GET() {
         const logs = await prismaContent.shipLog.findMany({
             where: { userId },
             include: {
-                topic: {
-                    include: { article: true }
-                }
+                topic: true
             },
             orderBy: { discoveredAt: 'desc' }
         });
@@ -33,14 +32,14 @@ export async function GET() {
                 topicId: log.topicId,
                 discoveredAt: log.discoveredAt,
                 name: log.topic.name,
-                lastUpdated: log.topic.article?.updatedAt || null
+                lastUpdated: log.topic.updatedAt
             };
         });
 
         return NextResponse.json({ logs: formattedLogs });
 
     } catch (error) {
-        console.error('Failed to fetch ship logs:', error);
+        logger.error('Failed to fetch ship logs:', { error });
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

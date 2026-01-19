@@ -1,4 +1,5 @@
 import neo4j, { Driver, Session } from 'neo4j-driver';
+import logger from "@/lib/logger";
 
 let driver: Driver;
 
@@ -80,7 +81,7 @@ export async function getGraphData() {
             links
         };
     } catch (error) {
-        console.error('Neo4j Query Error:', error);
+        logger.error('Neo4j Query Error:', { error: error instanceof Error ? error.message : error });
         throw error;
     } finally {
         await session.close();

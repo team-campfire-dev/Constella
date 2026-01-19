@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { processUserQuery } from "@/lib/wiki-engine";
 import prismaContent from "@/lib/prisma-content";
+import logger from "@/lib/logger";
 
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
@@ -37,23 +38,28 @@ export async function POST(req: Request) {
             }
         });
 
-        const response = await processUserQuery(userId, message, language || 'en');
+        // Wiki Engine Query
+        const wikiResult = await processUserQuery(userId, message, language);
 
-        // 2. Save AI Message
-        const aiMsg = await prismaContent.chatHistory.create({
+        // Save AI Response to Chat History (Content DB)
+        // Note: We save the "answer" (chat response) to chat history, but the "content" (wiki data) is already saved in WikiArticle.
+        await prismaContent.chatHistory.create({
             data: {
                 userId,
                 role: 'assistant',
-                content: response.content
+                content: wikiResult.answer
             }
         });
 
         return NextResponse.json({
             success: true,
-            data: response
+            role: 'assistant',
+            content: wikiResult.answer,
+            isNew: wikiResult.isNew,
+            topicId: wikiResult.topicId
         });
     } catch (error) {
-        console.error("Chat API Error:", error);
+        logger.error("Chat API Error", { error: error instanceof Error ? error.message : error });
         return NextResponse.json({ error: 'Failed to process query' }, { status: 500 });
     }
 }
@@ -82,7 +88,7 @@ export async function GET(req: Request) {
             }))
         });
     } catch (error) {
-        console.error("Fetch History Error:", error);
+        logger.error("Fetch History Error", { error: error instanceof Error ? error.message : error });
         return NextResponse.json({ error: 'Failed to fetch history' }, { status: 500 });
     }
 }
