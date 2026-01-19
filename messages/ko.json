@@ -32,12 +32,22 @@
     },
     "StarMap": {
         "title": "별자리 지도",
+        "cardTitle": "별자리 지도",
         "menu": {
             "starMap": "별자리 지도",
             "shipLog": "항해 일지",
             "commsConsole": "통신 콘솔"
         },
-        "cardTitle": "별자리 지도",
-        "inputPlaceholder": "신호 전송 중..."
+        "search": "별자리 검색...",
+        "discovering": "새로운 지식 탐색 중...",
+        "inputPlaceholder": "AI 통신 콘솔에 입력..."
+    },
+    "ShipLog": {
+        "title": "항해 일지",
+        "loading": "일지 불러오는 중...",
+        "empty": "아직 발견된 기록이 없습니다. 별자리 지도를 탐험하세요!"
+    },
+    "Console": {
+        "title": "통신"
     }
 }

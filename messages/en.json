@@ -32,12 +32,22 @@
     },
     "StarMap": {
         "title": "Star Map",
+        "cardTitle": "Star Map",
         "menu": {
             "starMap": "Star Map",
             "shipLog": "Ship Log",
             "commsConsole": "Comms Console"
         },
-        "cardTitle": "Star Map",
-        "inputPlaceholder": "Transmitting signal..."
+        "search": "Search Constellation...",
+        "discovering": "Discovering...",
+        "inputPlaceholder": "Enter query for AI Console..."
+    },
+    "ShipLog": {
+        "title": "Ship Log",
+        "loading": "Retrieving Logs...",
+        "empty": "No discoveries recorded yet. Explore the Star Map!"
+    },
+    "Console": {
+        "title": "Communications"
     }
 }

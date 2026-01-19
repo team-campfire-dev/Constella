@@ -19,41 +19,59 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Title and content are required' }, { status: 400 });
         }
 
-        // 2. 위키 링크 파싱 [[Link]]
-        // Regex to find content inside [[ ]]
-        const linkRegex = /\[\[(.*?)\]\]/g;
-        const matches = [...content.matchAll(linkRegex)];
-        const linkedKeywords = matches.map(match => match[1]);
+        // 2. 수동 제출을 위한 듀얼 트랜잭션
+        // 참고: 새로운 Schema (Topic + WikiArticle)를 사용합니다.
+        // Manual submission implies we treat 'title' as the Topic Name.
 
-        // 3. 듀얼 트랜잭션 실행 (MySQL + Neo4j)
-        const result = await withDualTransaction(async (prismaTx, neo4jTx) => {
-            // A. MySQL 저장 (컨텐츠 DB)
-            const article = await prismaTx.wikiArticle.upsert({
-                where: { title: title },
-                update: {
-                    content: content,
-                    authorId: session.user.id || 'unknown',
-                },
-                create: {
-                    title: title,
-                    content: content,
-                    authorId: session.user.id || 'unknown',
-                },
+        await withDualTransaction(async (prismaTx, neo4jTx) => {
+            // A. 주제(Topic) 찾기 또는 생성 (이름 정규화)
+            const normalizedTitle = title.trim().toLowerCase();
+
+            // 이름으로 기존 Topic 확인
+            const topic = await prismaTx.topic.upsert({
+                where: { name: normalizedTitle },
+                update: {},
+                create: { name: normalizedTitle }
             });
 
-            // B. Neo4j 그래프 동기화
-            await syncArticleToGraph(neo4jTx, title, linkedKeywords);
+            // B. 기사(WikiArticle) 생성 또는 업데이트
+            // Note: 'authorId' is not in the schema anymore as it's a shared wiki (wiki-engine style).
+            // Ideally we should track who edited it (Review Log/History), but for now we just save content.
+            await prismaTx.wikiArticle.upsert({
+                where: { topicId: topic.id },
+                update: {
+                    content: content,
+                    updatedAt: new Date()
+                },
+                create: {
+                    topicId: topic.id,
+                    content: content,
+                    language: 'en' // 기본값 en
+                }
+            });
 
-            return article;
-        });
-
-        return NextResponse.json({
-            success: true,
-            data: {
-                article: result,
-                links: linkedKeywords
+            // C. 별칭(Alias) 생성 (화면 표시 제목이 정규화된 제목과 다른 경우)
+            if (title.trim() !== normalizedTitle) {
+                try {
+                    await prismaTx.alias.upsert({
+                        where: { name: title.trim() },
+                        update: {},
+                        create: { name: title.trim(), topicId: topic.id }
+                    });
+                } catch (e) {
+                    // 별칭 충돌 무시
+                }
             }
+
+            // D. 그래프 동기화
+            const linkRegex = /\[\[(.*?)\]\]/g;
+            const matches = [...content.matchAll(linkRegex)];
+            const linkedKeywords = matches.map(match => match[1]);
+
+            await syncArticleToGraph(neo4jTx, normalizedTitle, linkedKeywords);
         });
+
+        return NextResponse.json({ success: true });
 
     } catch (error) {
         console.error('Wiki Article Creation Failed:', error);

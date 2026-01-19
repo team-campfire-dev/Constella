@@ -11,9 +11,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const pathname = usePathname();
 
     const navigation = [
-        { name: t('shipLog'), href: '#', icon: FileText },
+        { name: t('shipLog'), href: '/ship-log', icon: FileText },
         { name: t('starMap'), href: '/', icon: Globe },
-        { name: t('commsConsole'), href: '#', icon: Terminal },
+        { name: t('commsConsole'), href: '/console', icon: Terminal },
     ];
 
     return (

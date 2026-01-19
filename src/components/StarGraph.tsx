@@ -166,6 +166,14 @@ export default function StarGraph() {
                         type="text"
                         placeholder="Transmitting signal..."
                         className="w-full bg-[#1C1E2D] text-gray-300 rounded-md py-3 px-4 pl-4 pr-12 border border-gray-700 focus:outline-none focus:border-[#38BDF8] focus:ring-1 focus:ring-[#38BDF8]"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                const target = e.target as HTMLInputElement;
+                                if (target.value.trim()) {
+                                    window.location.href = `/console?q=${encodeURIComponent(target.value)}`;
+                                }
+                            }
+                        }}
                     />
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">

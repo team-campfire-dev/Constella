@@ -8,11 +8,57 @@ datasource db {
   url      = env("DATABASE_CONTENT_URL")
 }
 
+model Topic {
+  id        String       @id @default(cuid())
+  name      String       @unique // Normalized name (lowercase)
+  aliases   Alias[]
+  article   WikiArticle?
+  shipLogs  ShipLog[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model Alias {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  topicId   String
+  topic     Topic    @relation(fields: [topicId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+
+model User {
+  id          String        @id
+  shipLogs    ShipLog[]
+  chatHistory ChatHistory[]
+}
+
+model ChatHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String   // 'user' | 'assistant'
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+}
+
+
+model ShipLog {
+  id           String   @id @default(cuid())
+  userId       String   // Reference to Main DB User
+  user         User     @relation(fields: [userId], references: [id])
+  topicId      String
+  topic        Topic    @relation(fields: [topicId], references: [id])
+  discoveredAt DateTime @default(now())
+
+  @@unique([userId, topicId])
+}
+
 model WikiArticle {
   id        String   @id @default(cuid())
-  title     String   @unique
+  topicId   String   @unique
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
   content   String   @db.Text
-  authorId  String
-  createdAt DateTime @default(now())
+  language  String   @default("en")
   updatedAt DateTime @updatedAt
 }

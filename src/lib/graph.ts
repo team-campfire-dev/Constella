@@ -31,6 +31,4 @@ export async function syncArticleToGraph(tx: Transaction, title: string, linkedK
         title,
         linkedKeywords
     });
-
-});
 }
