@@ -53,6 +53,7 @@ export async function generateWikiContent(topic: string, language: string = 'en'
         let parsed = JSON.parse(text);
 
         // Robust recursive unwrapping to handle Array or 'response'/'result' wrappers
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const unwrap = (obj: any): any => {
             if (Array.isArray(obj)) return unwrap(obj[0]);
             if (obj && typeof obj === 'object') {
@@ -64,8 +65,9 @@ export async function generateWikiContent(topic: string, language: string = 'en'
 
         parsed = unwrap(parsed);
 
-        // Normalize keys (Gemini might return Capitalized keys despite instructions)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const normalize = (obj: any) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newObj: any = {};
             for (const key in obj) {
                 const lowerKey = key.toLowerCase();
@@ -93,6 +95,7 @@ export async function generateWikiContent(topic: string, language: string = 'en'
         parsed.chatResponse = parsed.chatResponse || "";
 
         return parsed as { topic: string, title?: string, canonicalName: string, tags: string[], content: string, chatResponse: string };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
         logger.error("Gemini 생성 오류:", { message: error.message, stack: error.stack, rawResponse: text });
         console.error("Gemini Raw Response:", text); // Explicit console log
@@ -133,8 +136,9 @@ export const batchTranslate = async (topics: string[], targetLang: string) => {
         });
         const text = result.response.text();
         return JSON.parse(text.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '')) as Record<string, string>;
-    } catch (e) {
-        logger.error("Batch Translate Failed", { error: e });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+        console.error("Gemini Batch Translate Error", e);
         return {};
     }
 };

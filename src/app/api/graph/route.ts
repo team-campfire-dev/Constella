@@ -3,12 +3,14 @@ import { getDriver } from '@/lib/neo4j';
 import logger from "@/lib/logger";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { Prisma } from '@prisma/client-content';
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userId = (session.user as any).id;
 
     try {
@@ -54,13 +56,17 @@ export async function GET(req: NextRequest) {
                     await prismaContent.$transaction(
                         Object.entries(results).map(([canonical, translated]) => {
                             const topicId = missingTopics.find(t => t.topic.name === canonical)?.topic.id;
-                            if (!topicId) return null;
+                            if (!topicId) return null; // Should not happen
+
+                            // Return the promise
                             return prismaContent.wikiArticle.upsert({
                                 where: { topicId_language: { topicId, language: lang } },
                                 update: { title: translated },
                                 create: { topicId, language: lang, title: translated, content: null }
-                            });
-                        }).filter((x): x is any => x !== null)
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            }) as any;
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        }).filter((x): x is Prisma.PrismaPromise<any> => x !== null)
                     );
                 } catch (e) {
                     logger.error("Graph Batch Translation Error", { error: e });
@@ -91,6 +97,7 @@ export async function GET(req: NextRequest) {
             `, { names: discoveredNames });
 
             const nodesMap = new Map();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const links: any[] = [];
 
             result.records.forEach(record => {
@@ -135,10 +142,6 @@ export async function GET(req: NextRequest) {
                             });
                         } else {
                             // Mystery Node
-                            // For mystery nodes, we usually show the canonical name or "???"
-                            // User asked to see localized names. If undiscovered, we likely don't have the localized title yet 
-                            // (because we only discover it when we create the article).
-                            // So English canonical name is fine for Mystery.
                             nodesMap.set(id, {
                                 id,
                                 name: canonicalName,
@@ -161,8 +164,11 @@ export async function GET(req: NextRequest) {
             });
 
             logger.info(`[GraphAPI] Returning ${nodesMap.size} nodes`, {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 known: Array.from(nodesMap.values()).filter((n: any) => n.group === 'known').length,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 mystery: Array.from(nodesMap.values()).filter((n: any) => n.group === 'mystery').length,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 names: Array.from(nodesMap.values()).map((n: any) => n.name)
             });
 
@@ -184,3 +190,4 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Failed to fetch graph data' }, { status: 500 });
     }
 }
+

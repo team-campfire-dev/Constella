@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from '@prisma/client-content';
+import { Prisma } from '@prisma/client-content';
 import { Transaction } from 'neo4j-driver';
 import { getDriver } from './neo4j';
 import prismaContent from './prisma-content';

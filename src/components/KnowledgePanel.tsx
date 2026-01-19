@@ -93,7 +93,7 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
         return (
             <ReactMarkdown
                 components={{
-                    a: ({ node, href, children, ...props }) => {
+                    a: ({ href, children, ...props }) => {
                         if (href && href.startsWith('#wiki-')) {
                             const linkName = decodeURIComponent(href.replace('#wiki-', ''));
                             return (

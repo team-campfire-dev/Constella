@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { processUserQuery } from "@/lib/wiki-engine";
@@ -8,11 +8,13 @@ import logger from "@/lib/logger";
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session || !session.user || !session.user.email) {
-        if (!session?.user && !('id' in (session?.user || {}))) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (!session?.user && !('id' in (session?.user || {} as any))) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userId = (session?.user as any).id;
 
     try {
@@ -30,7 +32,7 @@ export async function POST(req: Request) {
         });
 
         // 1. Save User Message
-        const userMsg = await prismaContent.chatHistory.create({
+        await prismaContent.chatHistory.create({
             data: {
                 userId,
                 role: 'user',
@@ -64,11 +66,13 @@ export async function POST(req: Request) {
     }
 }
 
-export async function GET(req: Request) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function GET(_req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userId = (session.user as any).id;
 
     try {

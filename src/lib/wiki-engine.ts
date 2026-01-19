@@ -1,4 +1,4 @@
-import prisma from '@/lib/prisma'; // Main DB (User)
+
 import prismaContent from '@/lib/prisma-content'; // Content DB
 import { withDualTransaction } from '@/lib/transaction';
 import { syncArticleToGraph, mergeAliasesToCanonical } from '@/lib/graph';
@@ -80,35 +80,6 @@ export async function processUserQuery(userId: string, query: string, language: 
             ...allAliases.map(a => a.name)
         ])).sort((a, b) => b.length - a.length);
 
-        const autoLink = (text: string) => {
-            let linkedText = text;
-            for (const keyword of keywordsToLink) {
-                // Skip if keyword is too short (e.g. 1 char) to avoid noise
-                if (keyword.length < 2) continue;
-
-                // Regex to match keyword NOT already in brackets
-                // This is simple looking but tricky. 
-                // We want to avoid [[Black Hole]] matching "Hole".
-                // A safe way is to mask existing links first, then link, then unmask.
-
-                // However, for MVP, we can try a regex lookbehind/ahead approach if supported.
-                // JS supports lookbehind in recent Node versions. Next.js 16 uses recent Node.
-
-                const regex = new RegExp(`(?<!\\[\\[|\\w)${keyword}(?!\\]\\]|\\w)`, 'gi');
-                // Note: \w boundary check might fail for Korean.
-                // Korean doesn't use simple word boundaries.
-                // For Korean, we just check if it's already bracketed.
-
-                // Simple masking approach:
-                // 1. Replace all [[...]] with placeholders
-                // 2. Replace keywords with [[Keyword]]
-                // 3. Restore placeholders
-            }
-            // Simplified Approach for now: Use a sophisticated split/join or just replace if we are careful.
-            // Let's use the Masking Strategy for robustness.
-            return linkedText;
-        };
-
         // Proper Masking Implementation
         const performAutoLink = (text: string) => {
             const placeholders: string[] = [];
@@ -131,12 +102,6 @@ export async function processUserQuery(userId: string, query: string, language: 
 
                 const pattern = new RegExp(`(${boundary}${escaped}${boundary})`, 'gi');
                 masked = masked.replace(pattern, '[[$1]]');
-                // But replacing with [[Match]] keeps original text which might be an Alias. That is fine. 
-                // The Wiki Engine resolves Aliases later.
-                // Actually, we should probably prefer the text that was matched.
-                // Wait, replace param needs to be a function or string with group.
-                // '[[ $1 ]]' puts spaces. '[[ $1 ]]' -> '[[$1]]'
-                // Correct is `[[$1]]`.
             });
 
             // Restore placeholders
@@ -197,7 +162,7 @@ export async function processUserQuery(userId: string, query: string, language: 
                         update: {},
                         create: { name: query.trim(), topicId: t.id }
                     });
-                } catch (e) {
+                } catch {
                     // 무시
                 }
             }
@@ -210,22 +175,12 @@ export async function processUserQuery(userId: string, query: string, language: 
                         update: {},
                         create: { name: extractedTopicName, topicId: t.id }
                     });
-                } catch (e) {
+                } catch {
                     // 무시
                 }
             }
 
             // D. Neo4j 그래프 동기화
-            // Graph represents CONCEPTS, so language agnostic logic is better?
-            // Actually, node.name is mainTopicName (e.g. "black hole").
-            // If user queries "블랙홀", canonical is "black hole" (if mapped).
-            // But if "블랙홀" is the canonical name (e.g. first discovery was in KR), node name is "블랙홀".
-            // It's acceptable for now.
-            // 3-2. Resolve Linked Keywords to Canonical Names
-            // This prevents creating duplicate "Ghost" nodes (e.g. "블랙홀" vs "Black Hole")
-            // We already loaded allTopics and allAliases for auto-linker. We can reuse them?
-            // Re-fetch strictly what we need for accuracy or use the cache map.
-
             // Build a map for fast lookup: Name -> Canonical Name
             const nameMap = new Map<string, string>();
 
@@ -238,8 +193,6 @@ export async function processUserQuery(userId: string, query: string, language: 
             };
 
             // Allow self-mapping for existing topics
-            // We should fetch these fresh or pass them? allTopics is outside tx. 
-            // It's acceptable for now (staleness minimal in single user).
             allTopics.forEach(t => addToMap(t.name, t.name.toLowerCase()));
 
             // Fetch Alias -> Topic mapping
@@ -260,7 +213,7 @@ export async function processUserQuery(userId: string, query: string, language: 
             // Deduplicate
             const uniqueKeywords = Array.from(new Set(resolvedKeywords));
 
-            logger.info(`[WikiEngine] Keywords Debug:`, {
+            logger.info(`[WikiEngine] Keywords Debug: `, {
                 linked: linkedKeywords,
                 resolved: resolvedKeywords,
                 unique: uniqueKeywords

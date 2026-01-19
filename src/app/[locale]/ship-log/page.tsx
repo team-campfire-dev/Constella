@@ -36,7 +36,7 @@ export default function ShipLogPage() {
                 console.error(err);
                 setLoading(false);
             });
-    }, []);
+    }, [locale]);
 
     if (loading) {
         return (

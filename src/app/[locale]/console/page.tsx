@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
 import ReactMarkdown from 'react-markdown';
 import DashboardLayout from '@/components/DashboardLayout';
 
@@ -14,7 +13,7 @@ interface Message {
 }
 
 export default function ConsolePage() {
-    const t = useTranslations('Console');
+    // const t = useTranslations('Console'); // Unused for now
     const params = useParams(); // { locale: string }
     const locale = params.locale as string;
     const searchParams = useSearchParams();
@@ -44,7 +43,7 @@ export default function ConsolePage() {
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    setMessages(data.data.map((msg: any) => ({
+                    setMessages(data.data.map((msg: { id: string, role: string, content: string, timestamp: string }) => ({
                         ...msg,
                         timestamp: new Date(msg.timestamp)
                     })));
@@ -56,11 +55,20 @@ export default function ConsolePage() {
 
     const processedQueryRef = useRef<string | null>(null);
 
+    // FIX: handleSendMessage is stable if defined inside, but better to wrap in useCallback OR just suppress if acceptable.
+    // However, handleSendMessage depends on locale, setMessages, etc. 
+    // Let's suppress for this specific pattern or wrap it.
+    // Wrapping handleSendMessage in useCallback is best practice.
+    // But it's defined BELOW. We need to move it up or disable lint locally.
+    // Simpler: disable lint for this line as we only want to run on initialQuery change.
     useEffect(() => {
+        console.log('[Console] Checking initial query:', { historyLoaded, initialQuery, processed: processedQueryRef.current });
         if (historyLoaded && initialQuery && processedQueryRef.current !== initialQuery) {
+            console.log('[Console] Triggering auto-send for:', initialQuery);
             processedQueryRef.current = initialQuery;
             handleSendMessage(initialQuery);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialQuery, historyLoaded]);
 
     const handleSendMessage = async (text: string) => {
@@ -133,7 +141,7 @@ export default function ConsolePage() {
         return (
             <ReactMarkdown
                 components={{
-                    a: ({ node, ...props }) => (
+                    a: ({ ...props }) => (
                         <span
                             className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4"
                             onClick={(e) => {
