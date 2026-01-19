@@ -74,8 +74,10 @@ export async function GET(req: Request) {
             await processUserQuery(userId, topic.name, lang);
 
             // Re-fetch to get the new article
+            // Check if id is present (it might be null if we searched by name)
+            const lookupId = id || topic.id;
             const refreshedTopic = await prismaContent.topic.findUnique({
-                where: { id },
+                where: { id: lookupId },
                 include: {
                     articles: { where: { language: lang } },
                     tags: true
