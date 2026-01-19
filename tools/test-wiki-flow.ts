@@ -38,8 +38,8 @@ async function main() {
     }
 
     // 3. Verify ShipLog
-    console.log("3️⃣ Verifying ShipLog in Main DB...");
-    const log = await prisma.shipLog.findFirst({
+    console.log("3️⃣ Verifying ShipLog in Content DB...");
+    const log = await prismaContent.shipLog.findFirst({
         where: { userId: user.id, topicId: { not: undefined } } // Just find any for this user, ideally matching topicId
     });
 
