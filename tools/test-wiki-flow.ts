@@ -53,12 +53,13 @@ async function main() {
     console.log("4️⃣ Verifying Content DB...");
     const topic = await prismaContent.topic.findFirst({
         where: { name: QUERY.toLowerCase() },
-        include: { article: true }
+        include: { articles: true }
     });
 
-    if (topic && topic.article) {
+    if (topic && topic.articles.length > 0) {
+        const article = topic.articles[0];
         console.log(`✅ Topic Found in Content DB! ID: ${topic.id}`);
-        console.log(`   - Article Lang: ${topic.article.language}`);
+        console.log(`   - Article Lang: ${article.language}`);
     } else {
         console.error("❌ TOPIC/ARTICLE NOT FOUND in Content DB.");
     }
