@@ -1,0 +1,76 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "prod" ]
+  pull_request:
+    branches: [ "prod" ]
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Lint
+      run: npm run lint
+
+    - name: Build
+      run: npm run build
+
+  deploy:
+    name: Deploy to Oracle VM
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+    - name: Deploy using SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.KEY }}
+        port: 22
+        script: |
+          # 프로젝트 경로 설정
+          PROJECT_DIR=~/Constella
+
+          if [ ! -d "$PROJECT_DIR" ]; then
+            echo "Project directory does not exist. Cloning..."
+            git clone -b prod https://github.com/team-campfire-dev/Constella.git "$PROJECT_DIR"
+            cd "$PROJECT_DIR"
+          else
+            echo "Project directory exists. Trying to pull..."
+            cd "$PROJECT_DIR"
+            if ! git pull origin prod; then
+              echo "Git pull failed. Re-cloning..."
+              cd ~
+              rm -rf "$PROJECT_DIR"
+              git clone -b prod https://github.com/team-campfire-dev/Constella.git "$PROJECT_DIR"
+              cd "$PROJECT_DIR"
+            fi
+          fi
+          
+          # .env 생성 (GitHub Secrets에서 주입)
+          echo "${{ secrets.ENV_FILE }}" > .env
+          
+          # Docker 컨테이너 재빌드 및 실행
+          docker compose up -d --build
+
+          # DB 스키마 동기화 (Prisma Push)
+          echo "Syncing Database Schema..."
+          docker compose exec -T app npx prisma db push
+          
+          # 불필요한 이미지 정리
+          docker image prune -f
