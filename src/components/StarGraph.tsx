@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 // Define types for Node and Link
 export interface GraphNode {
     id: number | string;
+    topicId?: string;
     name: string;
     val: number;
     color?: string;
@@ -33,7 +34,12 @@ interface StarGraphProps {
     onNodeClick?: (node: GraphNode) => void;
 }
 
+import { useLocale } from 'next-intl';
+
+// ...
+
 export default function StarGraph({ onNodeClick }: StarGraphProps) {
+    const locale = useLocale();
     const fgRef = useRef<any>(null);
     const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
     const [loading, setLoading] = useState(true);
@@ -41,7 +47,7 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const res = await fetch('/api/graph');
+                const res = await fetch(`/api/graph?lang=${locale}`);
                 if (!res.ok) throw new Error('Failed to fetch');
                 const graphData = await res.json();
 

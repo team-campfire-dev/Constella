@@ -1,7 +1,7 @@
 import prisma from '@/lib/prisma'; // Main DB (User)
 import prismaContent from '@/lib/prisma-content'; // Content DB
 import { withDualTransaction } from '@/lib/transaction';
-import { syncArticleToGraph } from '@/lib/graph';
+import { syncArticleToGraph, mergeAliasesToCanonical } from '@/lib/graph';
 import { generateWikiContent } from '@/lib/gemini';
 import logger from "@/lib/logger";
 
@@ -52,8 +52,8 @@ export async function processUserQuery(userId: string, query: string, language: 
     // 기사(Article) 찾기
     const article = topic?.articles?.[0]; // Prism returns array because of 1:N but we filtered by specific language so max 1
 
-    // 주제가 없거나, 기사가 없거나, 기사가 3개월 이상 된 경우 재생성 필요
-    const needsGeneration = !topic || !article || article.updatedAt < threeMonthsAgo;
+    // 주제가 없거나, 기사가 없거나, 기사 내용이 비어있거나(Lazy Loading Stub), 기사가 3개월 이상 된 경우 재생성 필요
+    const needsGeneration = !topic || !article || !article.content || article.updatedAt < threeMonthsAgo;
 
     if (needsGeneration) {
         logger.info(`[WikiEngine] 콘텐츠 생성 중: ${query} (언어: ${language})`);
@@ -69,7 +69,84 @@ export async function processUserQuery(userId: string, query: string, language: 
         const extractedTopicName = generated.topic.trim(); // Original extracted topic
         const tags = generated.tags || [];
 
-        // 링크 파싱 [[Keyword]]
+        // 3-1. Auto-Linker (Post-Processing)
+        // Fetch known topics to automatically link them in the text
+        const allTopics = await prismaContent.topic.findMany({ select: { name: true } });
+        const allAliases = await prismaContent.alias.findMany({ select: { name: true } });
+
+        // Merge and sort by length descending to match longest phrases first
+        const keywordsToLink = Array.from(new Set([
+            ...allTopics.map(t => t.name),
+            ...allAliases.map(a => a.name)
+        ])).sort((a, b) => b.length - a.length);
+
+        const autoLink = (text: string) => {
+            let linkedText = text;
+            for (const keyword of keywordsToLink) {
+                // Skip if keyword is too short (e.g. 1 char) to avoid noise
+                if (keyword.length < 2) continue;
+
+                // Regex to match keyword NOT already in brackets
+                // This is simple looking but tricky. 
+                // We want to avoid [[Black Hole]] matching "Hole".
+                // A safe way is to mask existing links first, then link, then unmask.
+
+                // However, for MVP, we can try a regex lookbehind/ahead approach if supported.
+                // JS supports lookbehind in recent Node versions. Next.js 16 uses recent Node.
+
+                const regex = new RegExp(`(?<!\\[\\[|\\w)${keyword}(?!\\]\\]|\\w)`, 'gi');
+                // Note: \w boundary check might fail for Korean.
+                // Korean doesn't use simple word boundaries.
+                // For Korean, we just check if it's already bracketed.
+
+                // Simple masking approach:
+                // 1. Replace all [[...]] with placeholders
+                // 2. Replace keywords with [[Keyword]]
+                // 3. Restore placeholders
+            }
+            // Simplified Approach for now: Use a sophisticated split/join or just replace if we are careful.
+            // Let's use the Masking Strategy for robustness.
+            return linkedText;
+        };
+
+        // Proper Masking Implementation
+        const performAutoLink = (text: string) => {
+            const placeholders: string[] = [];
+            // Mask existing links [[...]]
+            let masked = text.replace(/\[\[(.*?)\]\]/g, (match) => {
+                placeholders.push(match);
+                return `__PH_${placeholders.length - 1}__`;
+            });
+
+            // Iterate and link
+            keywordsToLink.forEach(keyword => {
+                if (keyword.length < 2) return;
+                // Escape literal regex characters in keyword
+                const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+                // For English, we want \b boundaries. For Korean, we usually don't want boundaries (particles attach).
+                // Detect if keyword is Korean or English?
+                const isKorean = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(keyword);
+                const boundary = isKorean ? '' : '\\b';
+
+                const pattern = new RegExp(`(${boundary}${escaped}${boundary})`, 'gi');
+                masked = masked.replace(pattern, '[[$1]]');
+                // But replacing with [[Match]] keeps original text which might be an Alias. That is fine. 
+                // The Wiki Engine resolves Aliases later.
+                // Actually, we should probably prefer the text that was matched.
+                // Wait, replace param needs to be a function or string with group.
+                // '[[ $1 ]]' puts spaces. '[[ $1 ]]' -> '[[$1]]'
+                // Correct is `[[$1]]`.
+            });
+
+            // Restore placeholders
+            return masked.replace(/__PH_(\d+)__/g, (_, index) => placeholders[parseInt(index)]);
+        };
+
+        content = performAutoLink(content);
+        answer = performAutoLink(answer); // Also linkify chat response for UI
+
+        // 링크 파싱 [[Keyword]] (다시 수행)
         const linkRegex = /\[\[(.*?)\]\]/g;
         const matches = [...content.matchAll(linkRegex)];
         const linkedKeywords = matches.map(match => match[1]);
@@ -107,8 +184,8 @@ export async function processUserQuery(userId: string, query: string, language: 
                         language: language
                     }
                 },
-                update: { content, language }, // Language shouldn't verify update but safe
-                create: { topicId: t.id, content, language }
+                update: { content, language, title: generated.title || extractedTopicName },
+                create: { topicId: t.id, content, language, title: generated.title || extractedTopicName }
             });
 
             // C. 별칭(Alias) 등록
@@ -144,7 +221,67 @@ export async function processUserQuery(userId: string, query: string, language: 
             // If user queries "블랙홀", canonical is "black hole" (if mapped).
             // But if "블랙홀" is the canonical name (e.g. first discovery was in KR), node name is "블랙홀".
             // It's acceptable for now.
-            await syncArticleToGraph(neo4jTx, mainTopicName, linkedKeywords, tags);
+            // 3-2. Resolve Linked Keywords to Canonical Names
+            // This prevents creating duplicate "Ghost" nodes (e.g. "블랙홀" vs "Black Hole")
+            // We already loaded allTopics and allAliases for auto-linker. We can reuse them?
+            // Re-fetch strictly what we need for accuracy or use the cache map.
+
+            // Build a map for fast lookup: Name -> Canonical Name
+            const nameMap = new Map<string, string>();
+
+            // Helper to add keys
+            const addToMap = (key: string, value: string) => {
+                const lower = key.toLowerCase();
+                const stripped = lower.replace(/\s+/g, '');
+                nameMap.set(lower, value);
+                nameMap.set(stripped, value);
+            };
+
+            // Allow self-mapping for existing topics
+            // We should fetch these fresh or pass them? allTopics is outside tx. 
+            // It's acceptable for now (staleness minimal in single user).
+            allTopics.forEach(t => addToMap(t.name, t.name.toLowerCase()));
+
+            // Fetch Alias -> Topic mapping
+            const aliasesWithTopic = await prismaTx.alias.findMany({
+                include: { topic: { select: { name: true } } }
+            });
+            aliasesWithTopic.forEach(a => {
+                addToMap(a.name, a.topic.name.toLowerCase());
+            });
+
+            const resolvedKeywords = linkedKeywords.map(k => {
+                const lower = k.trim().toLowerCase();
+                const stripped = lower.replace(/\s+/g, '');
+                // Try exact match, then stripped match, then original
+                return nameMap.get(lower) || nameMap.get(stripped) || k.trim();
+            });
+
+            // Deduplicate
+            const uniqueKeywords = Array.from(new Set(resolvedKeywords));
+
+            logger.info(`[WikiEngine] Keywords Debug:`, {
+                linked: linkedKeywords,
+                resolved: resolvedKeywords,
+                unique: uniqueKeywords
+            });
+
+            await syncArticleToGraph(neo4jTx, mainTopicName, uniqueKeywords, tags, t.id);
+
+            // 3-2.5. Merge Ghost Nodes (Alias -> Canonical)
+            // If we have aliases (query, extractedTopicName), we must merge any existing ghost nodes with these names into main.
+            const aliasesToMerge = Array.from(new Set([
+                query.trim().toLowerCase() !== mainTopicName ? query.trim() : null,
+                extractedTopicName.toLowerCase() !== mainTopicName ? extractedTopicName : null
+            ].filter(Boolean) as string[]));
+
+            if (aliasesToMerge.length > 0) {
+                await mergeAliasesToCanonical(neo4jTx, mainTopicName, aliasesToMerge);
+            }
+
+            // 3-3. UI Feedback: Append Wiki Content (instead of Detected Signals)
+            // User requested to show full content below chat response.
+            answer += `\n\n---\n\n${content}`;
 
             return t;
         });
@@ -153,7 +290,7 @@ export async function processUserQuery(userId: string, query: string, language: 
         isNew = true;
     } else {
         // 캐시된 콘텐츠 반환
-        content = article!.content;
+        content = article!.content || "";
         // 캐시된 경우 채팅 답변 생성
         answer = `**[ARCHIVE RETRIEVED]**\n\n기록 보관소에서 *"${topic!.name}"*에 대한 데이터를 찾았습니다.\n\n---\n\n${content}`;
         topicId = topic!.id;
@@ -167,8 +304,17 @@ export async function processUserQuery(userId: string, query: string, language: 
             create: { id: userId }
         });
 
-        await prismaContent.shipLog.create({
-            data: {
+        await prismaContent.shipLog.upsert({
+            where: {
+                userId_topicId: {
+                    userId,
+                    topicId: topicId!
+                }
+            },
+            update: {
+                discoveredAt: new Date() // Update discovery time or keep original? Update makes recently viewed logic easier.
+            },
+            create: {
                 userId,
                 topicId: topicId!,
                 discoveredAt: new Date()

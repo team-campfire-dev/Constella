@@ -15,8 +15,8 @@ export async function generateWikiContent(topic: string, language: string = 'en'
         throw new Error("API 키가 없습니다. .env 파일을 확인해주세요.");
     }
 
-    // 사용자 요청: "Gemini 3 Flash" (2026년 기준 최신 모델, gemini-3-flash-preview)
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    // 사용자 요청: "Gemini 2.0 Flash" Implementation Plan 기준
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
     const prompt = `
   Role: 당신은 SF 학습 플랫폼 "Constella"의 AI 사서입니다.
@@ -24,41 +24,117 @@ export async function generateWikiContent(topic: string, language: string = 'en'
   Language Instruction: 답변은 반드시 **${language === 'ko' ? '한국어(Korean)' : 'English'}**로 작성해야 합니다.
   
   Requirements:
-  1. **Output Format**: JSON 형식을 사용하세요.
-     Example: { "topic": "Black Hole", "canonicalName": "Black Hole", "tags": ["Astronomy"], "content": "A black hole is...", "chatResponse": "Hello! A black hole is..." }
-  2. **Topic**: 사용자의 질문이나 문장에서 핵심 주제를 추출한 것 (단수형, 명사).
-  3. **Canonical Name**: 추출된 주제의 **공식적이고 가장 일반적인 전체 이름(Full Name)**을 작성하세요.
-  4. **Tags**: 주제와 관련된 **핵심 카테고리나 연관 분야**를 2~3개 추출하세요.
-  5. **Content (Wiki Data)**:
-     - **이 필드에는 인사말이나 감탄사를 절대 포함하지 마세요.** 오직 객관적인 지식 정보만 담아야 합니다.
-     - Markdown 형식을 사용하세요.
-     - 3~5개의 핵심 키워드를 [[Keyword]]로 감싸주세요.
-     - 200단어 내외로 요약된 백과사전식 설명을 작성하세요.
-  6. **ChatResponse (For User)**:
-     - 사용자의 질문에 대한 친절하고 대화체로 된 답변을 작성하세요. ("안녕하세요" 등 인사말 포함 가능)
-     - 답변 중간중간에 **관련된 중요한 키워드나 개념**이 나온다면 반드시 '[[키워드]]' 형식으로 감싸주세요. (예: "이 별은 [[초신성]] 폭발 후에 형성됩니다.")
-     - 최소 2개 이상의 연관 주제를 포함하여 사용자가 탐사를 이어갈 수 있도록 유도하세요.
+  1. **Output Format**: Return a single flattened JSON object. Do not wrap in markdown code blocks. Do not wrap in an array or "response" object.
+  2. **Keys**: Use the following exact keys (camelCase):
+     - topic: Keyword (noun).
+     - title: Localized name (${language === 'ko' ? 'Korean' : 'English'}).
+     - canonicalName: Official English full name.
+     - tags: Array of strings (categories).
+     - content: Wiki article content (Markdown, objective, [[links]]).
+     - chatResponse: Conversational answer (Markdown, [[links]]).
+  3. **Content**:
+     - content: 200 words summary. No greetings. **Enclose 3-5 key scientific concepts, people, or related technologies in [[brackets]]**.
+     - chatResponse: Friendly, conversational. Include 3+ related topics as [[links]].
+     - **Link Note**: Ensure links are for **distinct, atomic concepts** (e.g., use "[[Event Horizon]], [[Telescope]]" instead of "[[Event Horizon Telescope]]" if they are separate ideas). Do not merge distinct concepts into one link.
   `;
 
+    let text = "";
     try {
         const result = await model.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: { responseMimeType: "application/json" }
         });
         const response = await result.response;
-        let text = response.text();
+        text = response.text();
 
         // Remove markdown code blocks if present
         text = text.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
 
-        return JSON.parse(text) as { topic: string, canonicalName: string, tags: string[], content: string, chatResponse: string };
-    } catch (error) {
-        logger.error("Gemini 생성 오류:", { error });
-        // Fallback for error or parsing failure - try to recover or just throw
+        let parsed = JSON.parse(text);
+
+        // Robust recursive unwrapping to handle Array or 'response'/'result' wrappers
+        const unwrap = (obj: any): any => {
+            if (Array.isArray(obj)) return unwrap(obj[0]);
+            if (obj && typeof obj === 'object') {
+                if ('response' in obj) return unwrap(obj.response);
+                if ('result' in obj) return unwrap(obj.result);
+            }
+            return obj;
+        };
+
+        parsed = unwrap(parsed);
+
+        // Normalize keys (Gemini might return Capitalized keys despite instructions)
+        const normalize = (obj: any) => {
+            const newObj: any = {};
+            for (const key in obj) {
+                const lowerKey = key.toLowerCase();
+                // Map specific keys if needed
+                if (lowerKey.includes('topic')) newObj.topic = obj[key];
+                else if (lowerKey.includes('title')) newObj.title = obj[key];
+                else if (lowerKey.includes('canonical')) newObj.canonicalName = obj[key];
+                else if (lowerKey.includes('tags')) newObj.tags = obj[key];
+                else if (lowerKey.includes('content')) newObj.content = obj[key];
+                else if (lowerKey.includes('chatresponse')) newObj.chatResponse = obj[key];
+                else newObj[lowerKey] = obj[key];
+            }
+            return newObj;
+        };
+
+        parsed = normalize(parsed);
+
+        // Validation for required fields
+        if (!parsed.topic) throw new Error("Gemini response missing 'topic' field");
+        if (!parsed.content) throw new Error("Gemini response missing 'content' field");
+
+        // Ensure defaults
+        parsed.tags = parsed.tags || [];
+        parsed.canonicalName = parsed.canonicalName || parsed.topic;
+        parsed.chatResponse = parsed.chatResponse || "";
+
+        return parsed as { topic: string, title?: string, canonicalName: string, tags: string[], content: string, chatResponse: string };
+    } catch (error: any) {
+        logger.error("Gemini 생성 오류:", { message: error.message, stack: error.stack, rawResponse: text });
+        console.error("Gemini Raw Response:", text); // Explicit console log
         if (error instanceof SyntaxError) {
-            // If JSON parsing fails
             throw new Error("AI가 올바른 JSON 형식을 반환하지 않았습니다.");
         }
-        throw new Error("AI 사서로부터 콘텐츠를 생성하지 못했습니다.");
+        throw new Error("AI 사서로부터 콘텐츠를 생성하지 못했습니다: " + (error.message || "Unknown Error"));
     }
 }
+
+export const batchTranslate = async (topics: string[], targetLang: string) => {
+    if (!apiKey) throw new Error("API Key Missing");
+
+    // If target is English, we generally assume topics ARE English canonical names.
+    if (targetLang === 'en') {
+        const result: Record<string, string> = {};
+        topics.forEach(t => result[t] = t);
+        return result;
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    const prompt = `
+    Role: Professional Translator for Sci-Fi Encyclopedia.
+    Task: Translate the following list of terms into ${targetLang === 'ko' ? 'Korean (한국어)' : targetLang}.
+    Requirements:
+    1. Output strictly valid JSON: { "Original Name": "Translated Name" }.
+    2. Maintain the nuance of standard scientific/sci-fi terminology (e.g. "Black Hole" -> "블랙홀").
+    3. If a term is a proper noun or better kept in English, keep it or transliterate appropriately.
+
+    List:
+    ${JSON.stringify(topics)}
+    `;
+
+    try {
+        const result = await model.generateContent({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json" }
+        });
+        const text = result.response.text();
+        return JSON.parse(text.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '')) as Record<string, string>;
+    } catch (e) {
+        logger.error("Batch Translate Failed", { error: e });
+        return {};
+    }
+};

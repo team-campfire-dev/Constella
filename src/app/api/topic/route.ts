@@ -67,7 +67,7 @@ export async function GET(req: Request) {
         // 2. If Article in requested language is missing, Generate it!
         let article = topic.articles[0];
 
-        if (!article) {
+        if (!article || !article.content) {
             // We have the topic name, so we can ask the WikiEngine to fill in this language
             // processUserQuery handles finding the topic by name and adding the article
             await processUserQuery(userId, topic.name, lang);

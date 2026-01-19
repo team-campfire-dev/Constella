@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../node_modules/@prisma/client-content"
+  output   = "../../node_modules/@prisma/client-content"
 }
 
 datasource db {
@@ -66,7 +66,8 @@ model WikiArticle {
   id        String   @id @default(cuid())
   topicId   String
   topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  content   String   @db.Text
+  title     String?  // Localized Title
+  content   String?  @db.Text // Optional: Can be null if only title is translated (Lazy Loading)
   language  String   @default("en")
   updatedAt DateTime @updatedAt
   

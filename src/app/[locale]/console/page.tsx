@@ -36,6 +36,8 @@ export default function ConsolePage() {
         scrollToBottom();
     }, [messages]);
 
+    const [historyLoaded, setHistoryLoaded] = useState(false);
+
     useEffect(() => {
         // Load History
         fetch('/api/chat')
@@ -48,19 +50,18 @@ export default function ConsolePage() {
                     })));
                 }
             })
-            .catch(err => console.error("Failed to load chat history", err));
+            .catch(err => console.error("Failed to load chat history", err))
+            .finally(() => setHistoryLoaded(true));
     }, []);
 
+    const processedQueryRef = useRef<string | null>(null);
+
     useEffect(() => {
-        if (initialQuery) {
-            // Prevent duplicate sending if it's already the last message?
-            // Simple check: don't auto-send if history exists and last msg matches?
-            // For now, let's just send it if it's explicitly in URL, but maybe debounce or check.
-            // Actually, if we load history, we might likely see the previous confirmation.
-            // But if the user clicks a link, they WANT a new query.
+        if (historyLoaded && initialQuery && processedQueryRef.current !== initialQuery) {
+            processedQueryRef.current = initialQuery;
             handleSendMessage(initialQuery);
         }
-    }, [initialQuery]);
+    }, [initialQuery, historyLoaded]);
 
     const handleSendMessage = async (text: string) => {
         if (!text.trim()) return;

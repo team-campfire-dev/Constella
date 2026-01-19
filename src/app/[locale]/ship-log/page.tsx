@@ -14,14 +14,17 @@ interface ShipLogEntry {
 
 import KnowledgePanel from '@/components/KnowledgePanel';
 
+import { useLocale } from 'next-intl';
+
 export default function ShipLogPage() {
     const t = useTranslations('ShipLog');
+    const locale = useLocale();
     const [logs, setLogs] = useState<ShipLogEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
 
     useEffect(() => {
-        fetch('/api/ship-log')
+        fetch(`/api/ship-log?lang=${locale}`)
             .then(res => res.json())
             .then(data => {
                 if (data.logs) {

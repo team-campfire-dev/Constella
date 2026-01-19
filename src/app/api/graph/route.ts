@@ -1,11 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { getDriver } from '@/lib/neo4j';
-import logger from "@/lib/logger"; // Using driver directly for custom query
+import logger from "@/lib/logger";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import prisma from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -15,26 +14,71 @@ export async function GET() {
     try {
         const { default: prismaContent } = await import('@/lib/prisma-content');
 
-        // 1. Fetch User's Discovered Topics
+        // 1. Fetch User's Discovered Topics with Localized Title
+        const { searchParams } = new URL(req.url);
+        const lang = searchParams.get('lang') || 'en';
+
         const shipLogs = await prismaContent.shipLog.findMany({
             where: { userId },
-            include: { topic: true }
+            include: {
+                topic: {
+                    include: {
+                        articles: {
+                            where: { language: lang },
+                            select: { title: true }
+                        }
+                    }
+                }
+            }
         });
 
-        // Even if empty, we might want to show a "Start Node" or something?
-        // For now, if empty, return empty (Star Map will be black).
-        // User needs to discover something via Console first.
+        // If empty, return just empty graph (or start node logic if we had one)
         if (shipLogs.length === 0) {
             return NextResponse.json({ nodes: [], links: [] });
         }
 
         const discoveredNames = shipLogs.map(log => log.topic.name);
 
+        // Batch Translation for missing localized titles
+        const newTranslations: Record<string, string> = {};
+        if (lang !== 'en') {
+            const missingTopics = shipLogs.filter(log => !log.topic.articles[0]?.title);
+            if (missingTopics.length > 0) {
+                const missingNames = missingTopics.map(l => l.topic.name);
+                try {
+                    const { batchTranslate } = await import('@/lib/gemini');
+                    const results = await batchTranslate(missingNames, lang);
+                    Object.assign(newTranslations, results);
+
+                    // Persist to DB (Lazy)
+                    await prismaContent.$transaction(
+                        Object.entries(results).map(([canonical, translated]) => {
+                            const topicId = missingTopics.find(t => t.topic.name === canonical)?.topic.id;
+                            if (!topicId) return null;
+                            return prismaContent.wikiArticle.upsert({
+                                where: { topicId_language: { topicId, language: lang } },
+                                update: { title: translated },
+                                create: { topicId, language: lang, title: translated, content: null }
+                            });
+                        }).filter((x): x is any => x !== null)
+                    );
+                } catch (e) {
+                    logger.error("Graph Batch Translation Error", { error: e });
+                }
+            }
+        }
+
+        // Create a map for localized names: Canonical -> Localized
+        const localizedNameMap = new Map<string, string>();
+        shipLogs.forEach(log => {
+            // Priority: New Translation > Existing DB Title > Canonical
+            const distinctTitle = newTranslations[log.topic.name] || log.topic.articles[0]?.title;
+            if (distinctTitle) {
+                localizedNameMap.set(log.topic.name, distinctTitle);
+            }
+        });
+
         // 2. Query Neo4j
-        // We want:
-        // - All Discovered Nodes (n)
-        // - All Nodes directly connected to Discovered Nodes (m) -> "Mystery Nodes"
-        // - Relationships between them
         const driver = getDriver();
         const sessionNeo = driver.session();
 
@@ -57,40 +101,51 @@ export async function GET() {
                 if (sourceNode) {
                     const id = sourceNode.identity.toString();
                     if (!nodesMap.has(id)) {
+                        const canonicalName = sourceNode.properties.name;
+                        const displayName = localizedNameMap.get(canonicalName) || canonicalName;
+
                         nodesMap.set(id, {
                             id,
-                            name: sourceNode.properties.name,
+                            topicId: sourceNode.properties.topicId, // Expose UUID
+                            name: displayName,
                             val: 20, // Discovered nodes are large
                             color: '#00F0FF', // Cyan
-                            group: 'known'
+                            group: 'known',
+                            canonical: canonicalName
                         });
                     }
                 }
 
                 if (targetNode) {
                     const id = targetNode.identity.toString();
-                    const name = targetNode.properties.name;
-                    const isDiscovered = discoveredNames.includes(name);
+                    const canonicalName = targetNode.properties.name;
+                    const isDiscovered = discoveredNames.includes(canonicalName);
 
                     if (!nodesMap.has(id)) {
                         if (isDiscovered) {
+                            const displayName = localizedNameMap.get(canonicalName) || canonicalName;
                             nodesMap.set(id, {
                                 id,
-                                name: name,
+                                topicId: targetNode.properties.topicId,
+                                name: displayName,
                                 val: 20,
                                 color: '#00F0FF',
-                                group: 'known'
+                                group: 'known',
+                                canonical: canonicalName
                             });
                         } else {
                             // Mystery Node
+                            // For mystery nodes, we usually show the canonical name or "???"
+                            // User asked to see localized names. If undiscovered, we likely don't have the localized title yet 
+                            // (because we only discover it when we create the article).
+                            // So English canonical name is fine for Mystery.
                             nodesMap.set(id, {
                                 id,
-                                name: name, // We show name? Or "???"
-                                // Game Design Choice: Outer Wilds shows the name but "There's more to explore here".
-                                // Let's show name but style it differently.
+                                name: canonicalName,
                                 val: 10,
                                 color: '#FFA500', // Orange for mystery/unexplored
-                                group: 'mystery'
+                                group: 'mystery',
+                                canonical: canonicalName
                             });
                         }
                     }
@@ -103,6 +158,12 @@ export async function GET() {
                         type: rel.type
                     });
                 }
+            });
+
+            logger.info(`[GraphAPI] Returning ${nodesMap.size} nodes`, {
+                known: Array.from(nodesMap.values()).filter((n: any) => n.group === 'known').length,
+                mystery: Array.from(nodesMap.values()).filter((n: any) => n.group === 'mystery').length,
+                names: Array.from(nodesMap.values()).map((n: any) => n.name)
             });
 
             return NextResponse.json({
