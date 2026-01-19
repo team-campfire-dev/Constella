@@ -41,7 +41,7 @@ import { useLocale } from 'next-intl';
 export default function StarGraph({ onNodeClick }: StarGraphProps) {
     const locale = useLocale();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const fgRef = useRef<any>();
+    const fgRef = useRef<any>(null);
     const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [loading, setLoading] = useState(true);
