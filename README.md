@@ -45,6 +45,12 @@ When deploying to a VM or production environment, you must configure the environ
   - If you leave this as `localhost`, users will be redirected to *their own* localhost after logging in, which will fail.
 - **`NEXTAUTH_SECRET`**: Set this to a random string for session encryption. You can generate one with `openssl rand -base64 32`.
 
+### Database Connection (Docker to Host)
+
+If your database is running on the Host machine (outside Docker), you cannot use `localhost` in your `DATABASE_URL`.
+- Use `host.docker.internal` (if configured in docker-compose) or the Docker Gateway IP (`172.17.0.1`).
+- Example: `DATABASE_URL="mysql://user:pass@host.docker.internal:3306/db_name"`
+
 ### Google OAuth
 
 Ensure your Google Cloud Console Credentials allow the correct redirect URI:

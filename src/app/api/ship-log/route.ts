@@ -16,6 +16,7 @@ export async function GET(request: Request) {
 
     try {
         // 1. Fetch User's ShipLog from Content DB (with Topic relation and localized Article)
+        console.log("[AuthDebug] Fetching ShipLogs for User:", userId);
         const logs = await prismaContent.shipLog.findMany({
             where: { userId },
             include: {
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
             },
             orderBy: { discoveredAt: 'desc' }
         });
+        console.log("[AuthDebug] Found ShipLogs:", logs.length);
 
         if (logs.length === 0) {
             return NextResponse.json({ logs: [] });
