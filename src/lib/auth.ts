@@ -19,36 +19,17 @@ export const authOptions: NextAuthOptions = {
     },
     callbacks: {
         async signIn({ user, account, profile }) {
-            console.log("[AuthDebug] SignIn Callback:", {
-                userId: user.id,
-                email: user.email,
-                provider: account?.provider,
-                providerAccountId: account?.providerAccountId
-            });
             return true;
         },
         async session({ session, token }) {
             if (session.user && token.sub) {
                 session.user.id = token.sub;
             }
-            console.log("[AuthDebug] Session Callback:", {
-                sessionUserId: session.user?.id,
-                tokenSub: token.sub
-            });
             return session;
         },
         async jwt({ token, user, account }) {
             if (user) {
                 token.sub = user.id;
-                console.log("[AuthDebug] JWT Callback (Initial Sign In):", {
-                    userId: user.id,
-                    tokenSub: token.sub,
-                    provider: account?.provider
-                });
-            } else {
-                console.log("[AuthDebug] JWT Callback (Session Update):", {
-                    tokenSub: token.sub
-                });
             }
             return token;
         }
