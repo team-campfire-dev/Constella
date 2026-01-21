@@ -16,7 +16,7 @@ export async function POST(req: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userId = (session?.user as any).id;
-    console.log("[AuthDebug] Chat API Request from User:", userId);
+
 
     try {
         const { message, language } = await req.json();
