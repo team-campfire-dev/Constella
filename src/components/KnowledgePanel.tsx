@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/navigation';
 
 interface KnowledgePanelProps {
@@ -22,6 +22,7 @@ interface TopicDetail {
 
 export default function KnowledgePanel({ topicId, onClose, onNavigate }: KnowledgePanelProps) {
     const locale = useLocale();
+    const t = useTranslations('KnowledgePanel');
     const router = useRouter();
     const [data, setData] = useState<TopicDetail | null>(null);
     const [loading, setLoading] = useState(false);
@@ -124,7 +125,7 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
             {/* Header */}
             <div className="p-4 border-b border-cyan-900/50 flex justify-between items-center bg-cyan-950/20">
                 <h2 className="text-lg font-bold tracking-widest text-cyan-400 uppercase truncate pr-4">
-                    {loading ? "Decrypting..." : data?.name || "Unknown Artifact"}
+                    {loading ? t('decrypting') : data?.name || t('unknownArtifact')}
                 </h2>
                 <button
                     onClick={onClose}
@@ -141,11 +142,11 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
                 {loading ? (
                     <div className="flex flex-col items-center justify-center h-40 space-y-4 text-cyan-500/50">
                         <span className="animate-spin text-2xl">⟳</span>
-                        <span className="text-xs uppercase tracking-widest">Accessing Neural Archive...</span>
+                        <span className="text-xs uppercase tracking-widest">{t('accessing')}</span>
                     </div>
                 ) : error ? (
                     <div className="text-red-400 text-center p-4 border border-red-500/30 bg-red-900/10 rounded">
-                        {error}
+                        {error === "Access Denied. Encrypted Signal." ? t('accessDenied') : error === "Signal Lost. Knowledge corrupted." ? t('signalLost') : error}
                     </div>
                 ) : data ? (
                     <div className="space-y-6">
@@ -167,8 +168,8 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
 
                         {/* Footer Info */}
                         <div className="pt-4 border-t border-cyan-900/30 text-xs text-cyan-700 font-mono">
-                            <div>ARCHIVE_ID: {data.id.slice(0, 8).toUpperCase()}</div>
-                            <div>LAST_UPDATE: {new Date(data.updatedAt).toLocaleDateString()}</div>
+                            <div>{t('archiveId')}: {data.id.slice(0, 8).toUpperCase()}</div>
+                            <div>{t('lastUpdate')}: {new Date(data.updatedAt).toLocaleDateString()}</div>
                         </div>
                     </div>
                 ) : null}

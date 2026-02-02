@@ -17,11 +17,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     ];
 
     return (
-        <div className="min-h-screen bg-[#0B0C15] text-white">
+        <div className="h-screen bg-[#0B0C15] text-white pt-16 overflow-hidden">
 
-            <div className="flex h-[calc(100vh-64px)]">
+            <div className="flex h-full">
                 {/* Sidebar */}
-                <div className="w-64 bg-[#11121C] border-r border-gray-800 hidden md:block">
+                <div className="w-64 bg-[#11121C] border-r border-gray-800 hidden md:block overflow-y-auto">
                     <nav className="mt-5 px-2 space-y-1">
                         {navigation.map((item) => {
                             const isActive = pathname === item.href;
@@ -51,7 +51,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
 
                 {/* Main Content */}
-                <div className="flex-1 overflow-auto bg-[#0B0C15]">
+                <div className="flex-1 overflow-auto bg-[#0B0C15] relative">
                     {children}
                 </div>
             </div>

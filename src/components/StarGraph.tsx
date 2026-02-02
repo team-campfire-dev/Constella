@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useLocale, useTranslations } from 'next-intl';
 
 // Define types for Node and Link
 export interface GraphNode {
@@ -25,26 +26,23 @@ interface GraphData {
     links: GraphLink[];
 }
 
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
-    ssr: false,
-    loading: () => <div className="flex items-center justify-center h-full text-[#38BDF8]">Loading Star Map...</div>
-});
-
 interface StarGraphProps {
     onNodeClick?: (node: GraphNode) => void;
 }
 
-import { useLocale } from 'next-intl';
-
-// ...
-
 export default function StarGraph({ onNodeClick }: StarGraphProps) {
     const locale = useLocale();
+    const t = useTranslations('StarMap');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fgRef = useRef<any>(null);
     const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [loading, setLoading] = useState(true);
+
+    const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
+        ssr: false,
+        loading: () => <div className="flex items-center justify-center h-full text-[#38BDF8]">{t('loading')}</div>
+    });
 
     useEffect(() => {
         const fetchData = async () => {
@@ -199,7 +197,7 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                 <div className="relative">
                     <input
                         type="text"
-                        placeholder="Transmitting signal..."
+                        placeholder={t('inputPlaceholder')}
                         className="w-full bg-[#1C1E2D] text-gray-300 rounded-md py-3 px-4 pl-4 pr-12 border border-gray-700 focus:outline-none focus:border-[#38BDF8] focus:ring-1 focus:ring-[#38BDF8]"
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') {
@@ -226,10 +224,10 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
 
             {/* Zoom controls */}
             <div className="absolute bottom-4 right-4 flex space-x-2">
-                <button className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700">
+                <button className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700" aria-label={t('zoomIn')}>
                     <span className="text-xl">+</span>
                 </button>
-                <button className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700">
+                <button className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700" aria-label={t('zoomOut')}>
                     <span className="text-xl">-</span>
                 </button>
                 <button className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700">

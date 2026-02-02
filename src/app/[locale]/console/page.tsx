@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import DashboardLayout from '@/components/DashboardLayout';
+import { useTranslations } from 'next-intl';
 
 interface Message {
     id: string;
@@ -13,14 +14,11 @@ interface Message {
 }
 
 export default function ConsolePage() {
-    // const t = useTranslations('Console'); // Unused for now
+    const t = useTranslations('Console');
     const params = useParams(); // { locale: string }
     const locale = params.locale as string;
     const searchParams = useSearchParams();
     const initialQuery = searchParams.get('q');
-
-    // params needs to be unwrapped safely in Next.js 15+, but 'use client' hooks handle it via props mostly.
-    // However, in generic client components, we use props directly.
 
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
@@ -38,35 +36,76 @@ export default function ConsolePage() {
     const [historyLoaded, setHistoryLoaded] = useState(false);
 
     useEffect(() => {
+        let pollInterval: NodeJS.Timeout;
+
         // Load History
-        fetch('/api/chat')
-            .then(res => res.json())
-            .then(data => {
+        const fetchHistory = async () => {
+            try {
+                const res = await fetch('/api/chat');
+                const data = await res.json();
+
                 if (data.success) {
-                    setMessages(data.data.map((msg: { id: string, role: string, content: string, timestamp: string }) => ({
+                    const loadedMessages = data.data.map((msg: { id: string, role: string, content: string, timestamp: string }) => ({
                         ...msg,
                         timestamp: new Date(msg.timestamp)
-                    })));
+                    }));
+                    setMessages(loadedMessages);
+
+                    // Check if last message was from user (meaning AI is still thinking or failed)
+                    if (loadedMessages.length > 0) {
+                        const lastMsg = loadedMessages[loadedMessages.length - 1];
+                        if (lastMsg.role === 'user') {
+                            setIsLoading(true);
+                            // Start polling
+                            pollInterval = setInterval(async () => {
+                                try {
+                                    const pollRes = await fetch('/api/chat');
+                                    const pollData = await pollRes.json();
+                                    if (pollData.success) {
+                                        const latestMessages = pollData.data;
+                                        if (latestMessages.length > loadedMessages.length) {
+                                            // New message found!
+                                            const newMsgs = latestMessages.map((msg: { id: string, role: string, content: string, timestamp: string }) => ({
+                                                ...msg,
+                                                timestamp: new Date(msg.timestamp)
+                                            }));
+                                            setMessages(newMsgs);
+                                            setIsLoading(false);
+                                            clearInterval(pollInterval);
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error("Polling error", e);
+                                }
+                            }, 3000); // Poll every 3s
+                        }
+                    }
                 }
-            })
-            .catch(err => console.error("Failed to load chat history", err))
-            .finally(() => setHistoryLoaded(true));
+            } catch (err) {
+                console.error("Failed to load chat history", err);
+            } finally {
+                setHistoryLoaded(true);
+            }
+        };
+
+        fetchHistory();
+
+        return () => {
+            if (pollInterval) clearInterval(pollInterval);
+        };
     }, []);
 
     const processedQueryRef = useRef<string | null>(null);
 
-    // FIX: handleSendMessage is stable if defined inside, but better to wrap in useCallback OR just suppress if acceptable.
-    // However, handleSendMessage depends on locale, setMessages, etc. 
-    // Let's suppress for this specific pattern or wrap it.
-    // Wrapping handleSendMessage in useCallback is best practice.
-    // But it's defined BELOW. We need to move it up or disable lint locally.
-    // Simpler: disable lint for this line as we only want to run on initialQuery change.
     useEffect(() => {
         console.log('[Console] Checking initial query:', { historyLoaded, initialQuery, processed: processedQueryRef.current });
         if (historyLoaded && initialQuery && processedQueryRef.current !== initialQuery) {
-            console.log('[Console] Triggering auto-send for:', initialQuery);
-            processedQueryRef.current = initialQuery;
-            handleSendMessage(initialQuery);
+            // Only auto-send if not already loading (to avoid double send if we just recovered state)
+            if (!isLoading) {
+                console.log('[Console] Triggering auto-send for:', initialQuery);
+                processedQueryRef.current = initialQuery;
+                handleSendMessage(initialQuery);
+            }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialQuery, historyLoaded]);
@@ -113,7 +152,7 @@ export default function ConsolePage() {
             const errorMsg: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: "⚠️ Connection Lost. The Ship's AI is offline.",
+                content: t('connectionLost'),
                 timestamp: new Date()
             };
             setMessages(prev => [...prev, errorMsg]);
@@ -124,14 +163,6 @@ export default function ConsolePage() {
 
     // Replace [[Link]] with clickable spans that trigger a new message
     const renderContent = (content: string) => {
-        // Simple regex replace for valid Markdown links is hard with React components in string.
-        // We will preprocess: [[Link]] -> [Link](#console-link)
-        // And use a custom renderer for links.
-
-        // Actually simpler: Just use ReactMarkdown and standard link syntax?
-        // But the AI returns [[Link]]. Let's replace brackets with markdown links.
-        // [[Link]] -> [Link](?q=Link)
-
         const formatLinks = (text: string) => {
             return text.replace(/\[\[(.*?)\]\]/g, (match, p1) => {
                 return `[${p1}](?q=${encodeURIComponent(p1)})`;
@@ -169,11 +200,11 @@ export default function ConsolePage() {
                 {/* Header */}
                 <div className="p-4 border-b border-cyan-900 bg-cyan-950/20 backdrop-blur-md flex justify-between items-center z-20">
                     <h1 className="text-xl font-bold tracking-widest text-cyan-500 uppercase">
-                        AI Comm. Console
+                        {t('headerTitle')}
                     </h1>
                     <div className="flex gap-2 text-xs text-cyan-700">
-                        <span className="animate-pulse">●</span> ONLINE
-                        <span>v3.0.FLASH</span>
+                        <span className="animate-pulse">●</span> {t('statusOnline')}
+                        <span>{t('version')}</span>
                     </div>
                 </div>
 
@@ -182,7 +213,7 @@ export default function ConsolePage() {
                     {messages.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center text-cyan-800 opacity-50 space-y-4">
                             <div className="text-4xl">⍾</div>
-                            <div>Awaiting Protocol Input...</div>
+                            <div>{t('awaitingInput')}</div>
                         </div>
                     )}
 
@@ -193,7 +224,7 @@ export default function ConsolePage() {
                                 : 'bg-slate-900/80 border-cyan-800 text-slate-300'
                                 }`}>
                                 <div className="text-[10px] uppercase opacity-50 mb-1 flex justify-between gap-4">
-                                    <span>{msg.role === 'user' ? 'Pilot' : 'AI Librarian'}</span>
+                                    <span>{msg.role === 'user' ? t('roleUser') : t('roleAI')}</span>
                                     <span>{msg.timestamp.toLocaleTimeString()}</span>
                                 </div>
                                 <div className="prose prose-invert prose-p:my-1 prose-headings:text-cyan-400 prose-strong:text-cyan-300 text-sm leading-relaxed">
@@ -207,7 +238,7 @@ export default function ConsolePage() {
                         <div className="flex justify-start">
                             <div className="bg-slate-900/50 p-4 rounded border border-cyan-900/50 flex gap-2 items-center text-cyan-500 text-sm">
                                 <span className="animate-spin">⟳</span>
-                                <span>Processing Query...</span>
+                                <span>{t('processing')}</span>
                             </div>
                         </div>
                     )}
@@ -225,7 +256,7 @@ export default function ConsolePage() {
                             type="text"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
-                            placeholder="Type your query..."
+                            placeholder={t('inputPlaceholder')}
                             className="flex-1 bg-transparent border-none outline-none text-cyan-100 placeholder-cyan-800 font-mono py-3"
                             autoFocus
                         />
@@ -234,7 +265,7 @@ export default function ConsolePage() {
                             disabled={isLoading || !input.trim()}
                             className="px-6 bg-cyan-900/50 hover:bg-cyan-800/80 text-cyan-300 rounded border border-cyan-700 disabled:opacity-30 transition-all uppercase text-sm font-bold tracking-wider"
                         >
-                            Transmit
+                            {t('transmit')}
                         </button>
                     </form>
                 </div>
