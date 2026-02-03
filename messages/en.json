@@ -26,7 +26,10 @@
     },
     "Login": {
         "title": "Sign in to your account",
-        "signInGoogle": "Sign in with Google"
+        "signInGoogle": "Sign in with Google",
+        "email": "Email address",
+        "password": "Password",
+        "signIn": "Sign in"
     },
     "Profile": {
         "title": "User Info",

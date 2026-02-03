@@ -26,7 +26,10 @@
     },
     "Login": {
         "title": "계정에 로그인하세요",
-        "signInGoogle": "Google로 로그인"
+        "signInGoogle": "Google로 로그인",
+        "email": "이메일 주소",
+        "password": "비밀번호",
+        "signIn": "로그인"
     },
     "Profile": {
         "title": "사용자 정보",
