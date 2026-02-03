@@ -1,10 +1,24 @@
 {
+    "Metadata": {
+        "title": "Constella - 우주 탐사",
+        "description": "우주를 탐험하고 기록하세요."
+    },
     "Navbar": {
         "title": "Constella",
         "signIn": "로그인",
         "signedInAs": "로그인 계정",
         "yourProfile": "내 프로필",
-        "signOut": "로그아웃"
+        "signOut": "로그아웃",
+        "home": "홈",
+        "dashboard": "대시보드",
+        "menuOpen": "메뉴 열기",
+        "menuClose": "메뉴 닫기",
+        "userMenu": "사용자 메뉴"
+    },
+    "NotFound": {
+        "title": "페이지를 찾을 수 없습니다",
+        "description": "죄송합니다만, 요청하신 페이지를 찾을 수 없습니다.",
+        "backHome": "홈으로 돌아가기"
     },
     "Home": {
         "welcome": "환영합니다",
@@ -12,7 +26,10 @@
     },
     "Login": {
         "title": "계정에 로그인하세요",
-        "signInGoogle": "Google로 로그인"
+        "signInGoogle": "Google로 로그인",
+        "email": "이메일 주소",
+        "password": "비밀번호",
+        "signIn": "로그인"
     },
     "Profile": {
         "title": "사용자 정보",
@@ -40,7 +57,20 @@
         },
         "search": "별자리 검색...",
         "discovering": "새로운 지식 탐색 중...",
-        "inputPlaceholder": "AI 통신 콘솔에 입력..."
+        "inputPlaceholder": "AI 통신 콘솔에 입력...",
+        "signalTransmission": "신호 전송 중...",
+        "zoomIn": "확대",
+        "zoomOut": "축소",
+        "loading": "별자리 지도 로딩 중..."
+    },
+    "KnowledgePanel": {
+        "decrypting": "해독 중...",
+        "unknownArtifact": "알 수 없는 아티팩트",
+        "accessing": "신경망 기록소 접속 중...",
+        "signalLost": "신호 유실. 지식이 손상됨.",
+        "accessDenied": "접근 거부. 암호화된 신호.",
+        "archiveId": "아카이브_ID",
+        "lastUpdate": "마지막_업데이트"
     },
     "ShipLog": {
         "title": "항해 일지",
@@ -48,6 +78,16 @@
         "empty": "아직 발견된 기록이 없습니다. 별자리 지도를 탐험하세요!"
     },
     "Console": {
-        "title": "통신"
+        "title": "통신",
+        "headerTitle": "AI 통신 콘솔",
+        "statusOnline": "온라인",
+        "version": "v3.0.FLASH",
+        "awaitingInput": "프로토콜 입력 대기 중...",
+        "roleUser": "파일럿",
+        "roleAI": "AI 기록관",
+        "processing": "쿼리 처리 중...",
+        "connectionLost": "⚠️ 연결 끊김. 함선 AI가 오프라인입니다.",
+        "inputPlaceholder": "질문을 입력하세요...",
+        "transmit": "전송"
     }
 }

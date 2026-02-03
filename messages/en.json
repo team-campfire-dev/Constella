@@ -1,10 +1,24 @@
 {
+    "Metadata": {
+        "title": "Constella - Space Exploration",
+        "description": "Explore the cosmos and log your discoveries."
+    },
     "Navbar": {
         "title": "Constella",
         "signIn": "Sign in",
         "signedInAs": "Signed in as",
         "yourProfile": "Your Profile",
-        "signOut": "Sign out"
+        "signOut": "Sign out",
+        "home": "Home",
+        "dashboard": "Dashboard",
+        "menuOpen": "Open menu",
+        "menuClose": "Close menu",
+        "userMenu": "User menu"
+    },
+    "NotFound": {
+        "title": "Page Not Found",
+        "description": "Sorry, the page you are looking for could not be found.",
+        "backHome": "Back to Home"
     },
     "Home": {
         "welcome": "Welcome",
@@ -12,7 +26,10 @@
     },
     "Login": {
         "title": "Sign in to your account",
-        "signInGoogle": "Sign in with Google"
+        "signInGoogle": "Sign in with Google",
+        "email": "Email address",
+        "password": "Password",
+        "signIn": "Sign in"
     },
     "Profile": {
         "title": "User Info",
@@ -40,7 +57,20 @@
         },
         "search": "Search Constellation...",
         "discovering": "Discovering...",
-        "inputPlaceholder": "Enter query for AI Console..."
+        "inputPlaceholder": "Enter query for AI Console...",
+        "signalTransmission": "Transmitting signal...",
+        "zoomIn": "Zoom In",
+        "zoomOut": "Zoom Out",
+        "loading": "Loading Star Map..."
+    },
+    "KnowledgePanel": {
+        "decrypting": "Decrypting...",
+        "unknownArtifact": "Unknown Artifact",
+        "accessing": "Accessing Neural Archive...",
+        "signalLost": "Signal Lost. Knowledge corrupted.",
+        "accessDenied": "Access Denied. Encrypted Signal.",
+        "archiveId": "ARCHIVE_ID",
+        "lastUpdate": "LAST_UPDATE"
     },
     "ShipLog": {
         "title": "Ship Log",
@@ -48,6 +78,16 @@
         "empty": "No discoveries recorded yet. Explore the Star Map!"
     },
     "Console": {
-        "title": "Communications"
+        "title": "Communications",
+        "headerTitle": "AI Comm. Console",
+        "statusOnline": "ONLINE",
+        "version": "v3.0.FLASH",
+        "awaitingInput": "Awaiting Protocol Input...",
+        "roleUser": "Pilot",
+        "roleAI": "AI Librarian",
+        "processing": "Processing Query...",
+        "connectionLost": "⚠️ Connection Lost. The Ship's AI is offline.",
+        "inputPlaceholder": "Type your query...",
+        "transmit": "Transmit"
     }
 }
