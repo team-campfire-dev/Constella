@@ -112,7 +112,20 @@ export async function generateWikiContent(topic: string, language: string = 'en'
         const response = await result.response;
         text = response.text();
 
-        let parsed = JSON.parse(cleanJsonString(text));
+        // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
+        const firstBrace = text.indexOf('{');
+        const firstBracket = text.indexOf('[');
+        const lastBrace = text.lastIndexOf('}');
+        const lastBracket = text.lastIndexOf(']');
+
+        const start = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
+        const end = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
+
+        if (start !== -1 && end !== -1 && start < end) {
+            text = text.substring(start, end + 1);
+        }
+
+        let parsed = JSON.parse(text);
 
         parsed = unwrapGeminiResponse(parsed);
         parsed = normalizeWikiResponse(parsed);
@@ -170,8 +183,14 @@ export const batchTranslate = async (topics: string[], targetLang: string) => {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: { responseMimeType: "application/json" }
         });
-        const text = result.response.text();
-        return JSON.parse(cleanJsonString(text)) as Record<string, string>;
+        let text = result.response.text();
+        // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
+        const firstBrace = text.indexOf('{');
+        const lastBrace = text.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+            text = text.substring(firstBrace, lastBrace + 1);
+        }
+        return JSON.parse(text) as Record<string, string>;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
         logger.error("Gemini 일괄 번역 오류", e);

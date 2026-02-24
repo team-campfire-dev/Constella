@@ -37,9 +37,10 @@ model Alias {
 
 
 model User {
-  id          String        @id
-  shipLogs    ShipLog[]
-  chatHistory ChatHistory[]
+  id            String         @id
+  shipLogs      ShipLog[]
+  chatHistory   ChatHistory[]
+  commsMessages CommsMessage[]
 }
 
 model ChatHistory {
@@ -48,6 +49,15 @@ model ChatHistory {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      String   // 'user' | 'assistant'
   content   String   @db.Text
+  createdAt DateTime @default(now())
+}
+
+model CommsMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  channel   String   @default("global") // For future channels (e.g. "team", "guild")
   createdAt DateTime @default(now())
 }
 

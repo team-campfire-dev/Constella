@@ -2,12 +2,20 @@ import neo4j, { Driver } from 'neo4j-driver';
 import logger from "@/lib/logger";
 
 const neo4jDriverSingleton = () => {
+    const uri = process.env.NEO4J_URI;
+    const user = process.env.NEO4J_USER;
+    const password = process.env.NEO4J_PASSWORD;
+
+    if (!uri || !user || !password) {
+        const errorMessage = 'Missing Neo4j environment variables (NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD). ' +
+            'Please ensure they are defined in your .env file.';
+        logger.error(errorMessage);
+        throw new Error(errorMessage);
+    }
+
     return neo4j.driver(
-        process.env.NEO4J_URI || 'bolt://localhost:7687',
-        neo4j.auth.basic(
-            process.env.NEO4J_USER || 'neo4j',
-            process.env.NEO4J_PASSWORD || 'password'
-        )
+        uri,
+        neo4j.auth.basic(user, password)
     );
 };
 

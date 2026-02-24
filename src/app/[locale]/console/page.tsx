@@ -5,12 +5,25 @@ import { useSearchParams, useParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useTranslations } from 'next-intl';
+import clsx from 'clsx';
+// import UserAvatar from '@/components/UserAvatar';
 
 interface Message {
     id: string;
     role: 'user' | 'assistant';
     content: string;
     timestamp: Date;
+}
+
+interface CommsMessage {
+    id: string;
+    content: string;
+    timestamp: Date;
+    user: {
+        id: string;
+        name: string;
+        image?: string | null;
+    };
 }
 
 export default function ConsolePage() {
@@ -20,9 +33,17 @@ export default function ConsolePage() {
     const searchParams = useSearchParams();
     const initialQuery = searchParams.get('q');
 
+    const [activeTab, setActiveTab] = useState<'ai' | 'comms'>('ai');
+
+    // AI Chat State
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+
+    // Comms Chat State
+    const [commsMessages, setCommsMessages] = useState<CommsMessage[]>([]);
+    const [isCommsLoading, setIsCommsLoading] = useState(false);
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
@@ -31,14 +52,14 @@ export default function ConsolePage() {
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages]);
+    }, [messages, commsMessages, activeTab]);
 
+    // AI History Loading
     const [historyLoaded, setHistoryLoaded] = useState(false);
 
     useEffect(() => {
         let pollInterval: NodeJS.Timeout;
 
-        // Load History
         const fetchHistory = async () => {
             try {
                 const res = await fetch('/api/chat');
@@ -51,12 +72,10 @@ export default function ConsolePage() {
                     }));
                     setMessages(loadedMessages);
 
-                    // Check if last message was from user (meaning AI is still thinking or failed)
                     if (loadedMessages.length > 0) {
                         const lastMsg = loadedMessages[loadedMessages.length - 1];
                         if (lastMsg.role === 'user') {
                             setIsLoading(true);
-                            // Start polling
                             pollInterval = setInterval(async () => {
                                 try {
                                     const pollRes = await fetch('/api/chat');
@@ -64,7 +83,6 @@ export default function ConsolePage() {
                                     if (pollData.success) {
                                         const latestMessages = pollData.data;
                                         if (latestMessages.length > loadedMessages.length) {
-                                            // New message found!
                                             const newMsgs = latestMessages.map((msg: { id: string, role: string, content: string, timestamp: string }) => ({
                                                 ...msg,
                                                 timestamp: new Date(msg.timestamp)
@@ -77,7 +95,7 @@ export default function ConsolePage() {
                                 } catch (e) {
                                     console.error("Polling error", e);
                                 }
-                            }, 3000); // Poll every 3s
+                            }, 3000);
                         }
                     }
                 }
@@ -95,69 +113,138 @@ export default function ConsolePage() {
         };
     }, []);
 
+    // Auto-send initial query for AI
     const processedQueryRef = useRef<string | null>(null);
-
     useEffect(() => {
-        console.log('[Console] Checking initial query:', { historyLoaded, initialQuery, processed: processedQueryRef.current });
-        if (historyLoaded && initialQuery && processedQueryRef.current !== initialQuery) {
-            // Only auto-send if not already loading (to avoid double send if we just recovered state)
+        if (historyLoaded && initialQuery && processedQueryRef.current !== initialQuery && activeTab === 'ai') {
             if (!isLoading) {
-                console.log('[Console] Triggering auto-send for:', initialQuery);
                 processedQueryRef.current = initialQuery;
                 handleSendMessage(initialQuery);
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialQuery, historyLoaded]);
+    }, [initialQuery, historyLoaded, activeTab]);
+
+
+    // Comms Polling
+    useEffect(() => {
+        let pollInterval: NodeJS.Timeout;
+
+        const fetchComms = async () => {
+            try {
+                const res = await fetch('/api/comms?channel=global');
+                const data = await res.json();
+                if (data.success) {
+                    setCommsMessages(data.data.map((msg: any) => ({
+                        ...msg,
+                        timestamp: new Date(msg.timestamp)
+                    })));
+                }
+            } catch (e) {
+                console.error("Comms poll error", e);
+            }
+        };
+
+        if (activeTab === 'comms') {
+            fetchComms();
+            pollInterval = setInterval(fetchComms, 3000);
+        }
+
+        return () => {
+            if (pollInterval) clearInterval(pollInterval);
+        }
+    }, [activeTab]);
+
 
     const handleSendMessage = async (text: string) => {
         if (!text.trim()) return;
 
-        const userMsg: Message = {
-            id: Date.now().toString(),
-            role: 'user',
-            content: text,
-            timestamp: new Date()
-        };
-
-        setMessages(prev => [...prev, userMsg]);
+        // Optimistic clear or clear after success?
+        // Clearing immediately feels better but risky if fails.
+        // I'll keep immediate clear but handle error.
+        const originalInput = text;
         setInput('');
-        setIsLoading(true);
 
-        try {
-            const res = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: text,
-                    language: locale || 'en'
-                })
-            });
-
-            const data = await res.json();
-
-            if (data.success) {
-                const aiMsg: Message = {
-                    id: (Date.now() + 1).toString(),
-                    role: 'assistant',
-                    content: data.content,
-                    timestamp: new Date()
-                };
-                setMessages(prev => [...prev, aiMsg]);
-            } else {
-                throw new Error(data.error);
-            }
-        } catch (err) {
-            console.error(err);
-            const errorMsg: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: t('connectionLost'),
+        if (activeTab === 'ai') {
+            const userMsg: Message = {
+                id: Date.now().toString(),
+                role: 'user',
+                content: text,
                 timestamp: new Date()
             };
-            setMessages(prev => [...prev, errorMsg]);
-        } finally {
-            setIsLoading(false);
+
+            setMessages(prev => [...prev, userMsg]);
+            setIsLoading(true);
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        language: locale || 'en'
+                    })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    const aiMsg: Message = {
+                        id: (Date.now() + 1).toString(),
+                        role: 'assistant',
+                        content: data.content,
+                        timestamp: new Date()
+                    };
+                    setMessages(prev => [...prev, aiMsg]);
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                console.error(err);
+                const errorMsg: Message = {
+                    id: (Date.now() + 1).toString(),
+                    role: 'assistant',
+                    content: t('connectionLost'),
+                    timestamp: new Date()
+                };
+                setMessages(prev => [...prev, errorMsg]);
+                setInput(originalInput); // Restore input on error? Maybe confusing if error msg shown.
+            } finally {
+                setIsLoading(false);
+            }
+        } else {
+            // Comms
+            setIsCommsLoading(true);
+            try {
+                const res = await fetch('/api/comms', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        channel: 'global'
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    // Trigger refresh
+                    const pollRes = await fetch('/api/comms?channel=global');
+                    const pollData = await pollRes.json();
+                    if (pollData.success) {
+                         setCommsMessages(pollData.data.map((msg: any) => ({
+                            ...msg,
+                            timestamp: new Date(msg.timestamp)
+                        })));
+                    }
+                } else {
+                    throw new Error(data.error || 'Failed to send');
+                }
+            } catch (err) {
+                console.error("Failed to send comms", err);
+                // Restore input on error
+                setInput(originalInput);
+            } finally {
+                setIsCommsLoading(false);
+            }
         }
     };
 
@@ -178,7 +265,11 @@ export default function ConsolePage() {
                             onClick={(e) => {
                                 e.preventDefault();
                                 const q = new URLSearchParams(props.href?.split('?')[1]).get('q');
-                                if (q) handleSendMessage(q);
+                                if (q) {
+                                    if (activeTab !== 'ai') setActiveTab('ai');
+                                    // Small timeout to allow tab switch
+                                    setTimeout(() => handleSendMessage(q), 100);
+                                }
                             }}
                         >
                             {props.children}
@@ -199,9 +290,31 @@ export default function ConsolePage() {
 
                 {/* Header */}
                 <div className="p-4 border-b border-cyan-900 bg-cyan-950/20 backdrop-blur-md flex justify-between items-center z-20">
-                    <h1 className="text-xl font-bold tracking-widest text-cyan-500 uppercase">
-                        {t('headerTitle')}
-                    </h1>
+                    <div className="flex items-center gap-4">
+                        <h1 className="text-xl font-bold tracking-widest text-cyan-500 uppercase hidden md:block">
+                            {t('headerTitle')}
+                        </h1>
+                        <div className="flex bg-cyan-900/30 rounded p-1">
+                            <button
+                                onClick={() => setActiveTab('ai')}
+                                className={clsx(
+                                    "px-4 py-1 rounded text-sm font-bold uppercase transition-all",
+                                    activeTab === 'ai' ? "bg-cyan-600 text-white shadow-lg shadow-cyan-500/20" : "text-cyan-700 hover:text-cyan-400"
+                                )}
+                            >
+                                AI Uplink
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('comms')}
+                                className={clsx(
+                                    "px-4 py-1 rounded text-sm font-bold uppercase transition-all",
+                                    activeTab === 'comms' ? "bg-cyan-600 text-white shadow-lg shadow-cyan-500/20" : "text-cyan-700 hover:text-cyan-400"
+                                )}
+                            >
+                                Public Comms
+                            </button>
+                        </div>
+                    </div>
                     <div className="flex gap-2 text-xs text-cyan-700">
                         <span className="animate-pulse">●</span> {t('statusOnline')}
                         <span>{t('version')}</span>
@@ -210,38 +323,68 @@ export default function ConsolePage() {
 
                 {/* Messages Area */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar z-20 scroll-pt-4">
-                    {messages.length === 0 && (
-                        <div className="h-full flex flex-col items-center justify-center text-cyan-800 opacity-50 space-y-4">
-                            <div className="text-4xl">⍾</div>
-                            <div>{t('awaitingInput')}</div>
-                        </div>
+                    {/* AI Chat View */}
+                    {activeTab === 'ai' && (
+                        <>
+                            {messages.length === 0 && (
+                                <div className="h-full flex flex-col items-center justify-center text-cyan-800 opacity-50 space-y-4">
+                                    <div className="text-4xl">⍾</div>
+                                    <div>{t('awaitingInput')}</div>
+                                </div>
+                            )}
+
+                            {messages.map((msg) => (
+                                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[80%] rounded-lg p-4 border ${msg.role === 'user'
+                                        ? 'bg-cyan-900/30 border-cyan-500/50 text-cyan-100'
+                                        : 'bg-slate-900/80 border-cyan-800 text-slate-300'
+                                        }`}>
+                                        <div className="text-[10px] uppercase opacity-50 mb-1 flex justify-between gap-4">
+                                            <span>{msg.role === 'user' ? t('roleUser') : t('roleAI')}</span>
+                                            <span>{msg.timestamp.toLocaleTimeString()}</span>
+                                        </div>
+                                        <div className="prose prose-invert prose-p:my-1 prose-headings:text-cyan-400 prose-strong:text-cyan-300 text-sm leading-relaxed">
+                                            {msg.role === 'assistant' ? renderContent(msg.content) : msg.content}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {isLoading && (
+                                <div className="flex justify-start">
+                                    <div className="bg-slate-900/50 p-4 rounded border border-cyan-900/50 flex gap-2 items-center text-cyan-500 text-sm">
+                                        <span className="animate-spin">⟳</span>
+                                        <span>{t('processing')}</span>
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
 
-                    {messages.map((msg) => (
-                        <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] rounded-lg p-4 border ${msg.role === 'user'
-                                ? 'bg-cyan-900/30 border-cyan-500/50 text-cyan-100'
-                                : 'bg-slate-900/80 border-cyan-800 text-slate-300'
-                                }`}>
-                                <div className="text-[10px] uppercase opacity-50 mb-1 flex justify-between gap-4">
-                                    <span>{msg.role === 'user' ? t('roleUser') : t('roleAI')}</span>
-                                    <span>{msg.timestamp.toLocaleTimeString()}</span>
+                    {/* Comms Chat View */}
+                    {activeTab === 'comms' && (
+                        <>
+                            {commsMessages.length === 0 && (
+                                <div className="h-full flex flex-col items-center justify-center text-cyan-800 opacity-50 space-y-4">
+                                    <div className="text-4xl">📡</div>
+                                    <div>No signals detected.</div>
                                 </div>
-                                <div className="prose prose-invert prose-p:my-1 prose-headings:text-cyan-400 prose-strong:text-cyan-300 text-sm leading-relaxed">
-                                    {msg.role === 'assistant' ? renderContent(msg.content) : msg.content}
-                                </div>
-                            </div>
-                        </div>
-                    ))}
+                            )}
 
-                    {isLoading && (
-                        <div className="flex justify-start">
-                            <div className="bg-slate-900/50 p-4 rounded border border-cyan-900/50 flex gap-2 items-center text-cyan-500 text-sm">
-                                <span className="animate-spin">⟳</span>
-                                <span>{t('processing')}</span>
-                            </div>
-                        </div>
+                            {commsMessages.map((msg) => (
+                                <div key={msg.id} className="flex flex-col gap-1 mb-4">
+                                    <div className="flex items-center gap-2 text-xs text-cyan-600">
+                                        <span className="font-bold text-cyan-400">{msg.user.name}</span>
+                                        <span className="opacity-50">{msg.timestamp.toLocaleTimeString()}</span>
+                                    </div>
+                                    <div className="bg-slate-900/40 border border-cyan-900/30 rounded p-3 text-cyan-100 text-sm">
+                                        {msg.content}
+                                    </div>
+                                </div>
+                            ))}
+                        </>
                     )}
+
                     <div ref={messagesEndRef} />
                 </div>
 
@@ -256,13 +399,13 @@ export default function ConsolePage() {
                             type="text"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
-                            placeholder={t('inputPlaceholder')}
+                            placeholder={activeTab === 'ai' ? t('inputPlaceholder') : "Broadcast message..."}
                             className="flex-1 bg-transparent border-none outline-none text-cyan-100 placeholder-cyan-800 font-mono py-3"
                             autoFocus
                         />
                         <button
                             type="submit"
-                            disabled={isLoading || !input.trim()}
+                            disabled={(activeTab === 'ai' ? isLoading : isCommsLoading) || !input.trim()}
                             className="px-6 bg-cyan-900/50 hover:bg-cyan-800/80 text-cyan-300 rounded border border-cyan-700 disabled:opacity-30 transition-all uppercase text-sm font-bold tracking-wider"
                         >
                             {t('transmit')}
