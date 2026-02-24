@@ -7,7 +7,7 @@ import { processUserQuery } from "@/lib/wiki-engine";
 
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
-    if (!session) {
+    if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -21,8 +21,7 @@ export async function GET(req: Request) {
     }
 
     try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const userId = (session.user as any).id;
+        const userId = session.user.id;
 
         // Find Topic first (by ID or Name)
         let topic;
