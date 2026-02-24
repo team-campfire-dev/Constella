@@ -5,6 +5,74 @@ import { syncArticleToGraph, mergeAliasesToCanonical } from '@/lib/graph';
 import { generateWikiContent } from '@/lib/gemini';
 import logger from "@/lib/logger";
 
+interface KeywordData {
+    keywordsToLink: string[];
+    nameMap: Map<string, string>;
+}
+
+class KeywordCache {
+    private static data: KeywordData | null = null;
+    private static lastUpdate = 0;
+    private static TTL = 1000 * 60 * 10; // 10 minutes
+    private static pendingPromise: Promise<KeywordData> | null = null;
+
+    static async getKeywordsData(): Promise<KeywordData> {
+        if (this.data && (Date.now() - this.lastUpdate < this.TTL)) {
+            return this.data;
+        }
+
+        if (this.pendingPromise) {
+            return this.pendingPromise;
+        }
+
+        this.pendingPromise = (async () => {
+            try {
+                logger.info("[KeywordCache] Refreshing keywords from DB...");
+                const [allTopics, allAliases] = await Promise.all([
+                    prismaContent.topic.findMany({ select: { name: true } }),
+                    prismaContent.alias.findMany({
+                        include: { topic: { select: { name: true } } }
+                    })
+                ]);
+
+                const nameMap = new Map<string, string>();
+
+                const addToMap = (key: string, value: string) => {
+                    const lower = key.toLowerCase();
+                    const stripped = lower.replace(/\s+/g, '');
+                    nameMap.set(lower, value);
+                    nameMap.set(stripped, value);
+                };
+
+                allTopics.forEach(t => addToMap(t.name, t.name.toLowerCase()));
+                allAliases.forEach(a => addToMap(a.name, a.topic.name.toLowerCase()));
+
+                const keywordsToLink = Array.from(new Set([
+                    ...allTopics.map(t => t.name),
+                    ...allAliases.map(a => a.name)
+                ])).sort((a, b) => b.length - a.length);
+
+                this.data = { keywordsToLink, nameMap };
+                this.lastUpdate = Date.now();
+                return this.data;
+            } catch (error) {
+                logger.error("[KeywordCache] Error refreshing cache:", error);
+                // Fallback to empty data or keep old data if available
+                return this.data || { keywordsToLink: [], nameMap: new Map() };
+            } finally {
+                this.pendingPromise = null;
+            }
+        })();
+
+        return this.pendingPromise;
+    }
+
+    static invalidate() {
+        this.data = null;
+        this.lastUpdate = 0;
+    }
+}
+
 interface WikiResponse {
     answer: string;
     content: string;
@@ -85,41 +153,44 @@ export async function processUserQuery(userId: string, query: string, language: 
         const tags = generated.tags || [];
 
         // 3-1. 자동 링크 생성기 (후처리)
-        // 알려진 주제를 가져와 텍스트 내에서 자동으로 링크 연결
-        const allTopics = await prismaContent.topic.findMany({ select: { name: true } });
-        const allAliases = await prismaContent.alias.findMany({ select: { name: true } });
+        const { keywordsToLink, nameMap: cachedNameMap } = await KeywordCache.getKeywordsData();
 
-        // 병합 후 길이 역순 정렬 (긴 구문을 우선 매칭하기 위함)
-        const keywordsToLink = Array.from(new Set([
-            ...allTopics.map(t => t.name),
-            ...allAliases.map(a => a.name)
-        ])).sort((a, b) => b.length - a.length);
-
-        // 마스킹 구현
+        // 마스킹 및 자동 링크 생성 (하이브리드 최적화: 선별 후 단일 패스 교체)
         const performAutoLink = (text: string) => {
+            if (!text) return text;
+
+            // 1. 후보 키워드 선별 (전체 키워드 중 텍스트에 포함된 것만 골라냄)
+            // .includes()는 매우 최적화되어 있어 수만 개의 키워드에 대해서도 루프보다 빠름
+            const lowerText = text.toLowerCase();
+            const candidates = keywordsToLink.filter(keyword => {
+                if (keyword.length < 2) return false;
+                return lowerText.includes(keyword.toLowerCase());
+            });
+
+            if (candidates.length === 0) return text;
+
             const placeholders: string[] = [];
-            // 기존 링크 [[...]] 마스킹
+            // 2. 기존 링크 [[...]] 마스킹
             let masked = text.replace(/\[\[(.*?)\]\]/g, (match) => {
                 placeholders.push(match);
                 return `__PH_${placeholders.length - 1}__`;
             });
 
-            // 순회하며 링크 연결
-            keywordsToLink.forEach(keyword => {
-                if (keyword.length < 2) return;
-                // 키워드 내의 정규식 특수 문자 이스케이프
+            // 3. 단일 정규식 구성 (이미 길이 역순으로 정렬되어 있어 최장 일치 우선 매칭됨)
+            const patternParts = candidates.map(keyword => {
                 const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-                // 영어의 경우 단어 경계(\b)가 필요하지만, 한국어는 조사가 붙으므로 경계를 두면 안 됨.
-                // 키워드가 한국어인지 영어인지 감지
                 const isKorean = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(keyword);
                 const boundary = isKorean ? '' : '\\b';
-
-                const pattern = new RegExp(`(${boundary}${escaped}${boundary})`, 'gi');
-                masked = masked.replace(pattern, '[[$1]]');
+                return `${boundary}${escaped}${boundary}`;
             });
 
-            // 플레이스홀더 복원
+            if (patternParts.length > 0) {
+                // 선별된 후보에 대해서만 정규식 매칭 수행 (성능 대폭 향상)
+                const combinedPattern = new RegExp(`(${patternParts.join('|')})`, 'gi');
+                masked = masked.replace(combinedPattern, '[[$1]]');
+            }
+
+            // 4. 플레이스홀더 복원
             return masked.replace(/__PH_(\d+)__/g, (_, index) => placeholders[parseInt(index)]);
         };
 
@@ -197,32 +268,32 @@ export async function processUserQuery(userId: string, query: string, language: 
 
             // D. Neo4j 그래프 동기화
             // 빠른 조회를 위한 맵 생성: 이름 -> 정식 명칭
-            const nameMap = new Map<string, string>();
+            // 캐시된 맵을 복사하여 사용 (현재 트랜잭션 데이터 추가)
+            const currentNameMap = new Map(cachedNameMap);
 
             // 맵 추가 헬퍼
             const addToMap = (key: string, value: string) => {
                 const lower = key.toLowerCase();
                 const stripped = lower.replace(/\s+/g, '');
-                nameMap.set(lower, value);
-                nameMap.set(stripped, value);
+                currentNameMap.set(lower, value);
+                currentNameMap.set(stripped, value);
             };
 
-            // 기존 주제들에 대해 자기 자신 매핑
-            allTopics.forEach(t => addToMap(t.name, t.name.toLowerCase()));
-
-            // 별칭 -> 주제 매핑 가져오기
-            const aliasesWithTopic = await prismaTx.alias.findMany({
-                include: { topic: { select: { name: true } } }
-            });
-            aliasesWithTopic.forEach(a => {
-                addToMap(a.name, a.topic.name.toLowerCase());
-            });
+            // 현재 생성된 주제 및 별칭을 맵에 추가
+            const mainTopicNameLower = mainTopicName.toLowerCase();
+            addToMap(mainTopicName, mainTopicNameLower);
+            if (query.trim().toLowerCase() !== mainTopicNameLower) {
+                addToMap(query.trim(), mainTopicNameLower);
+            }
+            if (extractedTopicName.toLowerCase() !== mainTopicNameLower) {
+                addToMap(extractedTopicName, mainTopicNameLower);
+            }
 
             const resolvedKeywords = linkedKeywords.map(k => {
                 const lower = k.trim().toLowerCase();
                 const stripped = lower.replace(/\s+/g, '');
                 // 정확한 일치, 공백 제거 일치, 또는 원본 순으로 시도
-                return nameMap.get(lower) || nameMap.get(stripped) || k.trim();
+                return currentNameMap.get(lower) || currentNameMap.get(stripped) || k.trim();
             });
 
             // 중복 제거
@@ -247,6 +318,9 @@ export async function processUserQuery(userId: string, query: string, language: 
 
             return t;
         });
+
+        // 신규 주제/별칭이 생성되었으므로 캐시 무효화
+        KeywordCache.invalidate();
 
         topicId = savedTopic.id;
         isNew = true;
