@@ -14,8 +14,71 @@ const mockModel = {
 // Mock getGenerativeModel on the prototype so that any instance (including the one in gemini.ts) uses it
 mock.method(GoogleGenerativeAI.prototype, 'getGenerativeModel', () => mockModel);
 
-// Import batchTranslate AFTER mocking and setting env var
-const { batchTranslate } = await import('./gemini.ts');
+// Import functions AFTER mocking and setting env var
+const { batchTranslate, generateWikiContent } = await import('./gemini.ts');
+
+test('generateWikiContent - successful generation', async () => {
+    const topic = 'Quantum Mechanics';
+    const mockResponse = {
+        topic: 'Quantum Mechanics',
+        title: 'Quantum Mechanics',
+        canonicalName: 'Quantum Mechanics',
+        tags: ['Physics'],
+        content: 'Content about [[Quantum Mechanics]].',
+        chatResponse: 'Hello! Here is information about [[Quantum Mechanics]].'
+    };
+
+    mockModel.generateContent.mock.mockImplementationOnce(async () => ({
+        response: {
+            text: () => JSON.stringify(mockResponse)
+        }
+    }));
+
+    const result = await generateWikiContent(topic, 'en');
+
+    assert.deepStrictEqual(result, mockResponse);
+});
+
+test('generateWikiContent - handles wrapped and mis-cased response', async () => {
+    const topic = 'Black Hole';
+    const mockResponse = {
+        response: {
+            TOPIC: 'Black Hole',
+            content: 'A region of spacetime...',
+            TAGS: ['Astronomy', 'Physics']
+        }
+    };
+
+    mockModel.generateContent.mock.mockImplementationOnce(async () => ({
+        response: {
+            text: () => JSON.stringify(mockResponse)
+        }
+    }));
+
+    const result = await generateWikiContent(topic, 'en');
+
+    assert.strictEqual(result.topic, 'Black Hole');
+    assert.strictEqual(result.content, 'A region of spacetime...');
+    assert.deepStrictEqual(result.tags, ['Astronomy', 'Physics']);
+    assert.strictEqual(result.canonicalName, 'Black Hole'); // Defaulted from topic
+});
+
+test('generateWikiContent - handles markdown code blocks', async () => {
+    const topic = 'Evolution';
+    const mockResponse = {
+        topic: 'Evolution',
+        content: 'Change in the heritable characteristics...'
+    };
+
+    mockModel.generateContent.mock.mockImplementationOnce(async () => ({
+        response: {
+            text: () => '```json\n' + JSON.stringify(mockResponse) + '\n```'
+        }
+    }));
+
+    const result = await generateWikiContent(topic, 'en');
+    assert.strictEqual(result.topic, 'Evolution');
+});
 
 test('batchTranslate - targetLang "en" returns identity mapping', async () => {
     const topics = ['Concept1', 'Concept2'];
