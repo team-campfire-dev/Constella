@@ -1,18 +1,27 @@
 import neo4j, { Driver } from 'neo4j-driver';
 import logger from "@/lib/logger";
 
-let driver: Driver;
+const neo4jDriverSingleton = () => {
+    return neo4j.driver(
+        process.env.NEO4J_URI || 'bolt://localhost:7687',
+        neo4j.auth.basic(
+            process.env.NEO4J_USER || 'neo4j',
+            process.env.NEO4J_PASSWORD || 'password'
+        )
+    );
+};
+
+type Neo4jDriverSingleton = ReturnType<typeof neo4jDriverSingleton>;
+
+const globalForNeo4j = globalThis as unknown as {
+    neo4jDriver: Neo4jDriverSingleton | undefined;
+};
+
+const driver = globalForNeo4j.neo4jDriver ?? neo4jDriverSingleton();
+
+if (process.env.NODE_ENV !== 'production') globalForNeo4j.neo4jDriver = driver;
 
 export function getDriver(): Driver {
-    if (!driver) {
-        driver = neo4j.driver(
-            process.env.NEO4J_URI || 'bolt://localhost:7687',
-            neo4j.auth.basic(
-                process.env.NEO4J_USER || 'neo4j',
-                process.env.NEO4J_PASSWORD || 'password'
-            )
-        );
-    }
     return driver;
 }
 
