@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useLocale, useTranslations } from 'next-intl';
 
@@ -79,6 +79,87 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
         return sourceGroup === 'mystery' || targetGroup === 'mystery';
     };
 
+    // Custom node painting
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleNodeCanvasObject = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+        const x = node.x;
+        const y = node.y;
+
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+        const label = node.name;
+        const fontSize = 12 / globalScale;
+        ctx.font = `${fontSize}px Sans-Serif`;
+
+        // Size calculation (Scaled down significantly)
+        const r = (node.val || 4) * 0.3;
+
+        if (node.group === 'mystery') {
+            // Mystery Node Style: Dashed Orange Outline, Transparent Fill, "?" Center
+
+            // Size adjustment for visibility
+            // Ensure the outline is at least visible enough to contain the "?"
+            const visualR = Math.max(r, 6);
+
+            // Dashed Outline
+            ctx.beginPath();
+            ctx.setLineDash([2, 2]); // Tighter dashes
+            ctx.lineWidth = 1; // Thinner line
+            ctx.strokeStyle = '#FFA500';
+            ctx.arc(x, y, visualR, 0, 2 * Math.PI, false);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset dash for other elements
+
+            // Center "?" Text
+            ctx.fillStyle = '#FFA500';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Keep text readable: min 10px, max restricted slightly so it doesn't look huge
+            // But allow scaling with zoom
+            const textSz = Math.max(fontSize, 10);
+            ctx.font = `bold ${textSz}px Sans-Serif`;
+            ctx.fillText("?", x, y - 0.5); // Slight optical centering
+
+            // Label below node (Name like "Black Hole") - Restore label as requested
+            ctx.font = `${fontSize}px Sans-Serif`;
+            ctx.fillStyle = '#FFA500'; // Orange text
+            ctx.fillText(label, x, y + r + fontSize + 2); // Position below
+
+        } else {
+            // Known Node Style: Solid Cyan Core, Glow
+
+            if (Number.isFinite(r) && r > 0) {
+                try {
+                    const gradient = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 1.5);
+                    gradient.addColorStop(0, node.color || "#00F0FF");
+                    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI, false); // Glow slightly larger
+                    ctx.fill();
+
+                    // Solid core
+                    ctx.fillStyle = node.color || "#00F0FF";
+                    ctx.beginPath();
+                    ctx.arc(x, y, r * 0.6, 0, 2 * Math.PI, false);
+                    ctx.fill();
+                } catch {
+                    ctx.fillStyle = node.color || "#00F0FF";
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, 2 * Math.PI, false);
+                }
+            }
+
+            // Label below node
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = "#00F0FF"; // Cyan text for known nodes
+            ctx.fillText(label, x, y + r + fontSize);
+        }
+    }, []);
+
     return (
         <div className="w-full h-full bg-black rounded-lg overflow-hidden relative border border-gray-800">
             <ForceGraph2D
@@ -99,86 +180,7 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                 onNodeClick={onNodeClick as any}
 
                 // Custom node painting
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-                    const x = node.x;
-                    const y = node.y;
-
-                    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-
-                    const label = node.name;
-                    const fontSize = 12 / globalScale;
-                    ctx.font = `${fontSize}px Sans-Serif`;
-
-                    // Size calculation (Scaled down significantly)
-                    const r = (node.val || 4) * 0.3;
-
-                    if (node.group === 'mystery') {
-                        // Mystery Node Style: Dashed Orange Outline, Transparent Fill, "?" Center
-
-                        // Size adjustment for visibility
-                        // Ensure the outline is at least visible enough to contain the "?"
-                        const visualR = Math.max(r, 6);
-
-                        // Dashed Outline
-                        ctx.beginPath();
-                        ctx.setLineDash([2, 2]); // Tighter dashes
-                        ctx.lineWidth = 1; // Thinner line
-                        ctx.strokeStyle = '#FFA500';
-                        ctx.arc(x, y, visualR, 0, 2 * Math.PI, false);
-                        ctx.stroke();
-                        ctx.setLineDash([]); // Reset dash for other elements
-
-                        // Center "?" Text
-                        ctx.fillStyle = '#FFA500';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-
-                        // Keep text readable: min 10px, max restricted slightly so it doesn't look huge
-                        // But allow scaling with zoom
-                        const textSz = Math.max(fontSize, 10);
-                        ctx.font = `bold ${textSz}px Sans-Serif`;
-                        ctx.fillText("?", x, y - 0.5); // Slight optical centering
-
-                        // Label below node (Name like "Black Hole") - Restore label as requested
-                        ctx.font = `${fontSize}px Sans-Serif`;
-                        ctx.fillStyle = '#FFA500'; // Orange text
-                        ctx.fillText(label, x, y + r + fontSize + 2); // Position below
-
-                    } else {
-                        // Known Node Style: Solid Cyan Core, Glow
-
-                        if (Number.isFinite(r) && r > 0) {
-                            try {
-                                const gradient = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 1.5);
-                                gradient.addColorStop(0, node.color || "#00F0FF");
-                                gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
-
-                                ctx.fillStyle = gradient;
-                                ctx.beginPath();
-                                ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI, false); // Glow slightly larger
-                                ctx.fill();
-
-                                // Solid core
-                                ctx.fillStyle = node.color || "#00F0FF";
-                                ctx.beginPath();
-                                ctx.arc(x, y, r * 0.6, 0, 2 * Math.PI, false);
-                                ctx.fill();
-                            } catch {
-                                ctx.fillStyle = node.color || "#00F0FF";
-                                ctx.beginPath();
-                                ctx.arc(x, y, 4, 0, 2 * Math.PI, false);
-                            }
-                        }
-
-                        // Label below node
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillStyle = "#00F0FF"; // Cyan text for known nodes
-                        ctx.fillText(label, x, y + r + fontSize);
-                    }
-                }
-                }
+                nodeCanvasObject={handleNodeCanvasObject}
                 // Paint interaction area (hit detection)
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 nodePointerAreaPaint={(node: any, color, ctx) => {
