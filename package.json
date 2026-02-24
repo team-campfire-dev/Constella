@@ -7,9 +7,9 @@
     "db:tunnel": "node tools/tunnel.js",
     "build": "next build",
     "start": "next start",
-    "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate && prisma generate --schema=prisma/content/schema.prisma"
+    "postinstall": "prisma generate && prisma generate --schema=prisma/content/schema.prisma",
+    "test": "node --test --experimental-strip-types --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"./tools/test-loader.mjs\", pathToFileURL(\"./\"));' src/lib/*.test.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
