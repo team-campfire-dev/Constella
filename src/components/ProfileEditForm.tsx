@@ -1,26 +1,22 @@
 'use client'
 
 import { updateProfile } from "@/app/[locale]/profile/edit/actions"
-// We can use useFormStatus for loading state if we extract the button or use experimental hooks,
-// but for simplicity we'll just use the action directly or a wrapper.
-// To use useFormStatus, the button must be in a separate component or we use the hook in a child.
-// Let's keep it simple for now.
 import { useTranslations } from "next-intl"
+import { useFormStatus } from "react-dom"
+import { Loader2 } from "lucide-react"
 
 function SubmitButton() {
-    // Note: useFormStatus is available in react-dom (React Canary/Next.js)
-    // but importing it might require checking version compatibility or just using standard form behavior.
-    // Next.js 14+ supports it. We are on Next.js 16.
-
-    // import { useFormStatus } from 'react-dom'
-    // const { pending } = useFormStatus()
+    const { pending } = useFormStatus()
     const t = useTranslations('ProfileEdit')
 
     return (
         <button
             type="submit"
-            className="inline-flex justify-center rounded-md bg-indigo-600 py-2 px-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+            disabled={pending}
+            aria-disabled={pending}
+            className="inline-flex justify-center items-center rounded-md bg-indigo-600 py-2 px-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
+            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t('save')}
         </button>
     )
