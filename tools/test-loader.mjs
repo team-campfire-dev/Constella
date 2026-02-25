@@ -24,7 +24,7 @@ export async function resolve(specifier, context, nextResolve) {
       try {
         const url = new URL(specifier + '.ts', context.parentURL).href;
         return { url, shortCircuit: true };
-      } catch (e) {}
+      } catch { }
     }
   }
   return nextResolve(specifier, context);

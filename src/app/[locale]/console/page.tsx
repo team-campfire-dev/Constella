@@ -135,7 +135,7 @@ export default function ConsolePage() {
                 const res = await fetch('/api/comms?channel=global');
                 const data = await res.json();
                 if (data.success) {
-                    setCommsMessages(data.data.map((msg: any) => ({
+                    setCommsMessages(data.data.map((msg: { id: string; content: string; timestamp: string; user: { id: string; name: string; image?: string | null } }) => ({
                         ...msg,
                         timestamp: new Date(msg.timestamp)
                     })));
@@ -230,7 +230,7 @@ export default function ConsolePage() {
                     const pollRes = await fetch('/api/comms?channel=global');
                     const pollData = await pollRes.json();
                     if (pollData.success) {
-                         setCommsMessages(pollData.data.map((msg: any) => ({
+                        setCommsMessages(pollData.data.map((msg: { id: string; content: string; timestamp: string; user: { id: string; name: string; image?: string | null } }) => ({
                             ...msg,
                             timestamp: new Date(msg.timestamp)
                         })));

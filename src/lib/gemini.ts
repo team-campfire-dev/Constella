@@ -11,24 +11,6 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey || "dummy");
 
 /**
- * 마크다운 코드 블록이나 주변 텍스트가 포함된 JSON 문자열을 정제합니다.
- */
-function cleanJsonString(text: string): string {
-    const firstBrace = text.indexOf('{');
-    const firstBracket = text.indexOf('[');
-    const lastBrace = text.lastIndexOf('}');
-    const lastBracket = text.lastIndexOf(']');
-
-    const start = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
-    const end = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
-
-    if (start !== -1 && end !== -1 && start < end) {
-        return text.substring(start, end + 1);
-    }
-    return text.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
-}
-
-/**
  * 배열이나 'response'/'result' 래퍼를 처리하기 위한 재귀적 언래핑
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
