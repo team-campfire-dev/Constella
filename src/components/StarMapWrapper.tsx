@@ -19,7 +19,6 @@ export default function StarMapWrapper() {
             // Mystery Node: Redirect to Console to discover it
             // Use window.location as fallback or router? 
             // Better to use router for SPA feel if possible, but Console might need fresh state? No, SPA is fine.
-            console.log("Navigating to mystery node:", node.name);
             router.push(`/console?q=${encodeURIComponent(node.name)}`);
         } else if (node.group === 'known' && !node.topicId) {
             console.warn("Node missing topicId", node);

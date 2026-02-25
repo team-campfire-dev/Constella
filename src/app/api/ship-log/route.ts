@@ -9,14 +9,12 @@ export async function GET(request: Request) {
     if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userId = (session.user as any).id;
+    const userId = session.user.id;
     const { searchParams } = new URL(request.url);
     const lang = searchParams.get('lang') || 'en';
 
     try {
         // 1. Fetch User's ShipLog from Content DB (with Topic relation and localized Article)
-        console.log("[AuthDebug] Fetching ShipLogs for User:", userId);
         const logs = await prismaContent.shipLog.findMany({
             where: { userId },
             include: {
@@ -31,7 +29,6 @@ export async function GET(request: Request) {
             },
             orderBy: { discoveredAt: 'desc' }
         });
-        console.log("[AuthDebug] Found ShipLogs:", logs.length);
 
         if (logs.length === 0) {
             return NextResponse.json({ logs: [] });

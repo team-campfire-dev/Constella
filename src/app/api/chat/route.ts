@@ -7,15 +7,11 @@ import logger from "@/lib/logger";
 
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
-    if (!session || !session.user || !session.user.email) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (!session?.user && !('id' in (session?.user || {} as any))) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+    if (!session || !session.user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userId = (session?.user as any).id;
+    const userId = session.user.id;
 
 
     try {
@@ -70,11 +66,10 @@ export async function POST(req: Request) {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function GET(_req: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session) {
+    if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userId = (session.user as any).id;
+    const userId = session.user.id;
 
     try {
         const history = await prismaContent.chatHistory.findMany({

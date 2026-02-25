@@ -2,6 +2,7 @@
 
 import { Link } from '@/i18n/navigation'
 import { User } from "next-auth"
+import { signOut } from "next-auth/react"
 import UserDropdown from './UserDropdown'
 import { useState, useEffect } from 'react'
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline'
@@ -84,12 +85,12 @@ export default function NavbarClient({ user }: NavbarClientProps) {
                                     {t('yourProfile')}
                                 </Link>
                                 <div className="border-t border-gray-700 my-2"></div>
-                                {/* UserDropdown usually handles signout, but in mobile we might need a direct button or reuse logic. 
-                                    For now simplified. Ideal would be to expose SignOut functionality or replicate it. 
-                                    Since UserDropdown is a client component too, we could hide it and use direct links here if needed, 
-                                    but standard UserDropdown might not fit in mobile menu easily depending on implementation.
-                                    Let's rely on Profile page for signout or add a signout here later if UserDropdown doesn't suffice.
-                                */}
+                                <button
+                                    className="block w-full text-left rounded-md px-3 py-2 text-base font-medium text-gray-300 hover:bg-white/10 hover:text-white"
+                                    onClick={() => signOut()}
+                                >
+                                    {t('signOut')}
+                                </button>
                             </>
                         ) : (
                             <Link

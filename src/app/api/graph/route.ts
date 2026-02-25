@@ -7,11 +7,10 @@ import { Prisma } from '@prisma/client-content';
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session) {
+    if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userId = (session.user as any).id;
+    const userId = session.user.id;
 
     try {
         const { default: prismaContent } = await import('@/lib/prisma-content');
