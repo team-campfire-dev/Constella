@@ -19,17 +19,21 @@ const neo4jDriverSingleton = () => {
     );
 };
 
-type Neo4jDriverSingleton = ReturnType<typeof neo4jDriverSingleton>;
-
 const globalForNeo4j = globalThis as unknown as {
-    neo4jDriver: Neo4jDriverSingleton | undefined;
+    neo4jDriver: Driver | undefined;
 };
 
-const driver = globalForNeo4j.neo4jDriver ?? neo4jDriverSingleton();
-
-if (process.env.NODE_ENV !== 'production') globalForNeo4j.neo4jDriver = driver;
-
 export function getDriver(): Driver {
+    if (globalForNeo4j.neo4jDriver) {
+        return globalForNeo4j.neo4jDriver;
+    }
+
+    const driver = neo4jDriverSingleton();
+
+    if (process.env.NODE_ENV !== 'production') {
+        globalForNeo4j.neo4jDriver = driver;
+    }
+
     return driver;
 }
 
