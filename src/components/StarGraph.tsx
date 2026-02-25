@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useLocale, useTranslations } from 'next-intl';
 
@@ -30,6 +30,127 @@ interface StarGraphProps {
     onNodeClick?: (node: GraphNode) => void;
 }
 
+// Internal Loading Component
+function GraphLoading() {
+    const t = useTranslations('StarMap');
+    return <div className="flex items-center justify-center h-full text-[#38BDF8]">{t('loading')}</div>;
+}
+
+// Dynamic Import moved outside to prevent re-creation on every render
+const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
+    ssr: false,
+    loading: GraphLoading
+});
+
+// Helper Functions moved outside the component for referential stability
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const isMysteryLink = (link: any) => {
+    // Check if either end of the link is a mystery node
+    const sourceGroup = link.source.group || (link.source as GraphNode).group;
+    const targetGroup = link.target.group || (link.target as GraphNode).group;
+    return sourceGroup === 'mystery' || targetGroup === 'mystery';
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const getLinkColor = (link: any) => isMysteryLink(link) ? "#FFA500" : "#00F0FF33";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const getLinkLineDash = (link: any) => isMysteryLink(link) ? [5, 5] : null;
+
+// Custom node painting
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const handleNodeCanvasObject = (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const x = node.x;
+    const y = node.y;
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    const label = node.name;
+    const fontSize = 12 / globalScale;
+    ctx.font = `${fontSize}px Sans-Serif`;
+
+    // Size calculation (Scaled down significantly)
+    const r = (node.val || 4) * 0.3;
+
+    if (node.group === 'mystery') {
+        // Mystery Node Style: Dashed Orange Outline, Transparent Fill, "?" Center
+
+        // Size adjustment for visibility
+        // Ensure the outline is at least visible enough to contain the "?"
+        const visualR = Math.max(r, 6);
+
+        // Dashed Outline
+        ctx.beginPath();
+        ctx.setLineDash([2, 2]); // Tighter dashes
+        ctx.lineWidth = 1; // Thinner line
+        ctx.strokeStyle = '#FFA500';
+        ctx.arc(x, y, visualR, 0, 2 * Math.PI, false);
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset dash for other elements
+
+        // Center "?" Text
+        ctx.fillStyle = '#FFA500';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Keep text readable: min 10px, max restricted slightly so it doesn't look huge
+        // But allow scaling with zoom
+        const textSz = Math.max(fontSize, 10);
+        ctx.font = `bold ${textSz}px Sans-Serif`;
+        ctx.fillText("?", x, y - 0.5); // Slight optical centering
+
+        // Label below node (Name like "Black Hole") - Restore label as requested
+        ctx.font = `${fontSize}px Sans-Serif`;
+        ctx.fillStyle = '#FFA500'; // Orange text
+        ctx.fillText(label, x, y + r + fontSize + 2); // Position below
+
+    } else {
+        // Known Node Style: Solid Cyan Core, Glow
+
+        if (Number.isFinite(r) && r > 0) {
+            try {
+                const gradient = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 1.5);
+                gradient.addColorStop(0, node.color || "#00F0FF");
+                gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI, false); // Glow slightly larger
+                ctx.fill();
+
+                // Solid core
+                ctx.fillStyle = node.color || "#00F0FF";
+                ctx.beginPath();
+                ctx.arc(x, y, r * 0.6, 0, 2 * Math.PI, false);
+                ctx.fill();
+            } catch {
+                ctx.fillStyle = node.color || "#00F0FF";
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, 2 * Math.PI, false);
+            }
+        }
+
+        // Label below node
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = "#00F0FF"; // Cyan text for known nodes
+        ctx.fillText(label, x, y + r + fontSize);
+    }
+};
+
+// Paint interaction area (hit detection)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const paintNodePointerArea = (node: any, color: string, ctx: CanvasRenderingContext2D) => {
+    const r = (node.val || 4) * 0.3;
+    const hitR = node.group === 'mystery' ? Math.max(r, 6) : r * 1.5; // Match visual size
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, hitR + 2, 0, 2 * Math.PI, false); // Slightly larger for better UX
+    ctx.fill();
+};
+
 export default function StarGraph({ onNodeClick }: StarGraphProps) {
     const locale = useLocale();
     const t = useTranslations('StarMap');
@@ -38,11 +159,6 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
     const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [loading, setLoading] = useState(true);
-
-    const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
-        ssr: false,
-        loading: () => <div className="flex items-center justify-center h-full text-[#38BDF8]">{t('loading')}</div>
-    });
 
     useEffect(() => {
         const fetchData = async () => {
@@ -71,95 +187,6 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
         fetchData();
     }, [locale]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const isMysteryLink = (link: any) => {
-        // Check if either end of the link is a mystery node
-        const sourceGroup = link.source.group || (link.source as GraphNode).group;
-        const targetGroup = link.target.group || (link.target as GraphNode).group;
-        return sourceGroup === 'mystery' || targetGroup === 'mystery';
-    };
-
-    // Custom node painting
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleNodeCanvasObject = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-        const x = node.x;
-        const y = node.y;
-
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-
-        const label = node.name;
-        const fontSize = 12 / globalScale;
-        ctx.font = `${fontSize}px Sans-Serif`;
-
-        // Size calculation (Scaled down significantly)
-        const r = (node.val || 4) * 0.3;
-
-        if (node.group === 'mystery') {
-            // Mystery Node Style: Dashed Orange Outline, Transparent Fill, "?" Center
-
-            // Size adjustment for visibility
-            // Ensure the outline is at least visible enough to contain the "?"
-            const visualR = Math.max(r, 6);
-
-            // Dashed Outline
-            ctx.beginPath();
-            ctx.setLineDash([2, 2]); // Tighter dashes
-            ctx.lineWidth = 1; // Thinner line
-            ctx.strokeStyle = '#FFA500';
-            ctx.arc(x, y, visualR, 0, 2 * Math.PI, false);
-            ctx.stroke();
-            ctx.setLineDash([]); // Reset dash for other elements
-
-            // Center "?" Text
-            ctx.fillStyle = '#FFA500';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-
-            // Keep text readable: min 10px, max restricted slightly so it doesn't look huge
-            // But allow scaling with zoom
-            const textSz = Math.max(fontSize, 10);
-            ctx.font = `bold ${textSz}px Sans-Serif`;
-            ctx.fillText("?", x, y - 0.5); // Slight optical centering
-
-            // Label below node (Name like "Black Hole") - Restore label as requested
-            ctx.font = `${fontSize}px Sans-Serif`;
-            ctx.fillStyle = '#FFA500'; // Orange text
-            ctx.fillText(label, x, y + r + fontSize + 2); // Position below
-
-        } else {
-            // Known Node Style: Solid Cyan Core, Glow
-
-            if (Number.isFinite(r) && r > 0) {
-                try {
-                    const gradient = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 1.5);
-                    gradient.addColorStop(0, node.color || "#00F0FF");
-                    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
-
-                    ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI, false); // Glow slightly larger
-                    ctx.fill();
-
-                    // Solid core
-                    ctx.fillStyle = node.color || "#00F0FF";
-                    ctx.beginPath();
-                    ctx.arc(x, y, r * 0.6, 0, 2 * Math.PI, false);
-                    ctx.fill();
-                } catch {
-                    ctx.fillStyle = node.color || "#00F0FF";
-                    ctx.beginPath();
-                    ctx.arc(x, y, 4, 0, 2 * Math.PI, false);
-                }
-            }
-
-            // Label below node
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = "#00F0FF"; // Cyan text for known nodes
-            ctx.fillText(label, x, y + r + fontSize);
-        }
-    }, []);
-
     return (
         <div className="w-full h-full bg-black rounded-lg overflow-hidden relative border border-gray-800">
             <ForceGraph2D
@@ -169,10 +196,8 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                 nodeRelSize={6}
 
                 // Link styling: dashed and orange for mystery connections
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                linkColor={(link: any) => isMysteryLink(link) ? "#FFA500" : "#00F0FF33"}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                linkLineDash={(link: any) => isMysteryLink(link) ? [5, 5] : null}
+                linkColor={getLinkColor}
+                linkLineDash={getLinkLineDash}
 
                 backgroundColor="#000000"
                 enableNodeDrag={false}
@@ -182,16 +207,7 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                 // Custom node painting
                 nodeCanvasObject={handleNodeCanvasObject}
                 // Paint interaction area (hit detection)
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                nodePointerAreaPaint={(node: any, color, ctx) => {
-                    const r = (node.val || 4) * 0.3;
-                    const hitR = node.group === 'mystery' ? Math.max(r, 6) : r * 1.5; // Match visual size
-
-                    ctx.fillStyle = color;
-                    ctx.beginPath();
-                    ctx.arc(node.x, node.y, hitR + 2, 0, 2 * Math.PI, false); // Slightly larger for better UX
-                    ctx.fill();
-                }}
+                nodePointerAreaPaint={paintNodePointerArea}
             />
 
             {/* Input overlay at bottom */}
