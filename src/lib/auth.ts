@@ -1,4 +1,4 @@
-import { NextAuthOptions } from "next-auth"
+import type { NextAuthOptions } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { PrismaAdapter } from "@next-auth/prisma-adapter"
@@ -17,10 +17,15 @@ export const authOptions: NextAuthOptions = {
                 username: { label: "Username", type: "text" },
                 password: { label: "Password", type: "password" }
             },
-            async authorize(credentials, req) {
-                if (credentials?.username === 'agent@test.local' && credentials?.password === 'constella-agent') {
+            async authorize(credentials) {
+                const agentEmail = process.env.AGENT_EMAIL;
+                const agentPassword = process.env.AGENT_PASSWORD;
+
+                if (agentEmail && agentPassword &&
+                    credentials?.username === agentEmail &&
+                    credentials?.password === agentPassword) {
                     const user = await prisma.user.findUnique({
-                        where: { email: 'agent@test.local' }
+                        where: { email: agentEmail }
                     });
                     return user;
                 }
