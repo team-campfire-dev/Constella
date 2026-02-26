@@ -61,6 +61,7 @@
         "signalTransmission": "Transmitting signal...",
         "zoomIn": "Zoom In",
         "zoomOut": "Zoom Out",
+        "resetZoom": "Reset Zoom",
         "loading": "Loading Star Map..."
     },
     "KnowledgePanel": {

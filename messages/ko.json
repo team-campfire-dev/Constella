@@ -61,6 +61,7 @@
         "signalTransmission": "신호 전송 중...",
         "zoomIn": "확대",
         "zoomOut": "축소",
+        "resetZoom": "화면 초기화",
         "loading": "별자리 지도 로딩 중..."
     },
     "KnowledgePanel": {
