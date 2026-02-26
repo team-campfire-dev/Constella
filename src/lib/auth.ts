@@ -3,6 +3,17 @@ import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import prisma from "@/lib/prisma"
+import crypto from "node:crypto"
+
+/**
+ * Compares two strings using a constant-time algorithm to prevent timing attacks.
+ * It hashes both strings first to ensure equal length comparison.
+ */
+function safeCompare(a: string, b: string): boolean {
+    const hashA = crypto.createHash('sha256').update(a).digest();
+    const hashB = crypto.createHash('sha256').update(b).digest();
+    return crypto.timingSafeEqual(hashA, hashB);
+}
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(prisma),
@@ -23,7 +34,8 @@ export const authOptions: NextAuthOptions = {
 
                 if (agentEmail && agentPassword &&
                     credentials?.username === agentEmail &&
-                    credentials?.password === agentPassword) {
+                    // Use safeCompare to prevent timing attacks
+                    safeCompare(credentials?.password || "", agentPassword)) {
                     const user = await prisma.user.findUnique({
                         where: { email: agentEmail }
                     });
