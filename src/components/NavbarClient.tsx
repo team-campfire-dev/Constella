@@ -5,7 +5,7 @@ import { User } from "next-auth"
 import { signOut } from "next-auth/react"
 import UserDropdown from './UserDropdown'
 import { useState, useEffect } from 'react'
-import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline'
+import { Bars3Icon, XMarkIcon, GlobeAltIcon, DocumentTextIcon, CommandLineIcon } from '@heroicons/react/24/outline'
 import { useTranslations } from 'next-intl'
 
 interface NavbarClientProps {
@@ -14,8 +14,15 @@ interface NavbarClientProps {
 
 export default function NavbarClient({ user }: NavbarClientProps) {
     const t = useTranslations('Navbar')
+    const tMenu = useTranslations('StarMap.menu')
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const [scrolled, setScrolled] = useState(false)
+
+    const navigation = [
+        { name: tMenu('starMap'), href: '/', icon: GlobeAltIcon },
+        { name: tMenu('shipLog'), href: '/ship-log', icon: DocumentTextIcon },
+        { name: tMenu('commsConsole'), href: '/console', icon: CommandLineIcon },
+    ]
 
     useEffect(() => {
         const handleScroll = () => {
@@ -74,6 +81,18 @@ export default function NavbarClient({ user }: NavbarClientProps) {
                     <div className="space-y-1 px-2 pb-3 pt-2">
                         {user ? (
                             <>
+                                {navigation.map((item) => (
+                                    <Link
+                                        key={item.name}
+                                        href={item.href}
+                                        className="block rounded-md px-3 py-2 text-base font-medium text-gray-300 hover:bg-white/10 hover:text-white flex items-center"
+                                        onClick={() => setMobileMenuOpen(false)}
+                                    >
+                                        <item.icon className="mr-3 h-5 w-5 text-cyan-400" aria-hidden="true" />
+                                        {item.name}
+                                    </Link>
+                                ))}
+                                <div className="border-t border-gray-700 my-2"></div>
                                 <div className="px-3 py-2 text-base font-medium text-white">
                                     {t('signedInAs')} {user.name || user.email}
                                 </div>
