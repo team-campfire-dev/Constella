@@ -5,8 +5,13 @@ import { syncArticleToGraph, mergeAliasesToCanonical } from '@/lib/graph';
 import { generateWikiContent } from '@/lib/gemini';
 import logger from "@/lib/logger";
 
+interface CachedKeyword {
+    word: string;
+    pattern: string;
+}
+
 interface KeywordData {
-    keywordsToLink: string[];
+    processedKeywords: CachedKeyword[];
     nameMap: Map<string, string>;
 }
 
@@ -47,18 +52,32 @@ class KeywordCache {
                 allTopics.forEach(t => addToMap(t.name, t.name.toLowerCase()));
                 allAliases.forEach(a => addToMap(a.name, a.topic.name.toLowerCase()));
 
-                const keywordsToLink = Array.from(new Set([
+                const uniqueKeywords = Array.from(new Set([
                     ...allTopics.map(t => t.name),
                     ...allAliases.map(a => a.name)
-                ])).sort((a, b) => b.length - a.length);
+                ]));
 
-                this.data = { keywordsToLink, nameMap };
+                // Optimization: Pre-calculate regex patterns and lowercase forms
+                const processedKeywords: CachedKeyword[] = uniqueKeywords
+                    .filter(k => k.length >= 2)
+                    .sort((a, b) => b.length - a.length)
+                    .map(keyword => {
+                        const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const isKorean = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(keyword);
+                        const boundary = isKorean ? '' : '\\b';
+                        return {
+                            word: keyword.toLowerCase(),
+                            pattern: `${boundary}${escaped}${boundary}`
+                        };
+                    });
+
+                this.data = { processedKeywords, nameMap };
                 this.lastUpdate = Date.now();
                 return this.data;
             } catch (error) {
                 logger.error("[KeywordCache] Error refreshing cache:", error);
                 // Fallback to empty data or keep old data if available
-                return this.data || { keywordsToLink: [], nameMap: new Map() };
+                return this.data || { processedKeywords: [], nameMap: new Map() };
             } finally {
                 this.pendingPromise = null;
             }
@@ -153,7 +172,7 @@ export async function processUserQuery(userId: string, query: string, language: 
         const tags = generated.tags || [];
 
         // 3-1. 자동 링크 생성기 (후처리)
-        const { keywordsToLink, nameMap: cachedNameMap } = await KeywordCache.getKeywordsData();
+        const { processedKeywords, nameMap: cachedNameMap } = await KeywordCache.getKeywordsData();
 
         // 마스킹 및 자동 링크 생성 (하이브리드 최적화: 선별 후 단일 패스 교체)
         const performAutoLink = (text: string) => {
@@ -162,10 +181,9 @@ export async function processUserQuery(userId: string, query: string, language: 
             // 1. 후보 키워드 선별 (전체 키워드 중 텍스트에 포함된 것만 골라냄)
             // .includes()는 매우 최적화되어 있어 수만 개의 키워드에 대해서도 루프보다 빠름
             const lowerText = text.toLowerCase();
-            const candidates = keywordsToLink.filter(keyword => {
-                if (keyword.length < 2) return false;
-                return lowerText.includes(keyword.toLowerCase());
-            });
+
+            // Optimization: check against pre-lowercased word
+            const candidates = processedKeywords.filter(k => lowerText.includes(k.word));
 
             if (candidates.length === 0) return text;
 
@@ -177,12 +195,8 @@ export async function processUserQuery(userId: string, query: string, language: 
             });
 
             // 3. 단일 정규식 구성 (이미 길이 역순으로 정렬되어 있어 최장 일치 우선 매칭됨)
-            const patternParts = candidates.map(keyword => {
-                const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const isKorean = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(keyword);
-                const boundary = isKorean ? '' : '\\b';
-                return `${boundary}${escaped}${boundary}`;
-            });
+            // Optimization: use pre-calculated patterns
+            const patternParts = candidates.map(k => k.pattern);
 
             if (patternParts.length > 0) {
                 // 선별된 후보에 대해서만 정규식 매칭 수행 (성능 대폭 향상)
@@ -267,16 +281,15 @@ export async function processUserQuery(userId: string, query: string, language: 
             }
 
             // D. Neo4j 그래프 동기화
-            // 빠른 조회를 위한 맵 생성: 이름 -> 정식 명칭
-            // 캐시된 맵을 복사하여 사용 (현재 트랜잭션 데이터 추가)
-            const currentNameMap = new Map(cachedNameMap);
+            // Optimization: Avoid O(N) map copy by using look-aside map
+            const localNameMap = new Map<string, string>();
 
-            // 맵 추가 헬퍼
+            // 맵 추가 헬퍼 (Adds to local map only)
             const addToMap = (key: string, value: string) => {
                 const lower = key.toLowerCase();
                 const stripped = lower.replace(/\s+/g, '');
-                currentNameMap.set(lower, value);
-                currentNameMap.set(stripped, value);
+                localNameMap.set(lower, value);
+                localNameMap.set(stripped, value);
             };
 
             // 현재 생성된 주제 및 별칭을 맵에 추가
@@ -289,12 +302,23 @@ export async function processUserQuery(userId: string, query: string, language: 
                 addToMap(extractedTopicName, mainTopicNameLower);
             }
 
-            const resolvedKeywords = linkedKeywords.map(k => {
+            // Helper to resolve keyword using local map then cached map
+            const resolveKeyword = (k: string) => {
                 const lower = k.trim().toLowerCase();
                 const stripped = lower.replace(/\s+/g, '');
-                // 정확한 일치, 공백 제거 일치, 또는 원본 순으로 시도
-                return currentNameMap.get(lower) || currentNameMap.get(stripped) || k.trim();
-            });
+
+                // Check local map first
+                if (localNameMap.has(lower)) return localNameMap.get(lower)!;
+                if (localNameMap.has(stripped)) return localNameMap.get(stripped)!;
+
+                // Check cached map
+                if (cachedNameMap.has(lower)) return cachedNameMap.get(lower)!;
+                if (cachedNameMap.has(stripped)) return cachedNameMap.get(stripped)!;
+
+                return k.trim();
+            };
+
+            const resolvedKeywords = linkedKeywords.map(k => resolveKeyword(k));
 
             // 중복 제거
             const uniqueKeywords = Array.from(new Set(resolvedKeywords));
