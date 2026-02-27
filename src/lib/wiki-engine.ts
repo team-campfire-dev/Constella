@@ -16,11 +16,7 @@ class KeywordCache {
     private static TTL = 1000 * 60 * 10; // 10 minutes
     private static pendingPromise: Promise<KeywordData> | null = null;
 
-    static async getKeywordsData(): Promise<KeywordData> {
-        if (this.data && (Date.now() - this.lastUpdate < this.TTL)) {
-            return this.data;
-        }
-
+    private static async refresh(): Promise<KeywordData> {
         if (this.pendingPromise) {
             return this.pendingPromise;
         }
@@ -65,6 +61,21 @@ class KeywordCache {
         })();
 
         return this.pendingPromise;
+    }
+
+    static async getKeywordsData(): Promise<KeywordData> {
+        // Stale-While-Revalidate: Return data immediately if available
+        if (this.data) {
+            // If TTL expired, trigger background refresh
+            if (Date.now() - this.lastUpdate >= this.TTL) {
+                // Trigger background refresh without awaiting
+                this.refresh().catch(e => logger.error("[KeywordCache] Background refresh failed", e));
+            }
+            return this.data;
+        }
+
+        // First load or invalidated: must wait
+        return this.refresh();
     }
 
     static invalidate() {
