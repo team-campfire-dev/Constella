@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 
 // Define types for Node and Link
@@ -154,11 +155,37 @@ const paintNodePointerArea = (node: any, color: string, ctx: CanvasRenderingCont
 export default function StarGraph({ onNodeClick }: StarGraphProps) {
     const locale = useLocale();
     const t = useTranslations('StarMap');
+    const router = useRouter();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fgRef = useRef<any>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
     const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [loading, setLoading] = useState(true);
+
+    const handleZoomIn = () => {
+        if (fgRef.current) {
+            fgRef.current.zoom(fgRef.current.zoom() * 1.2, 400);
+        }
+    };
+
+    const handleZoomOut = () => {
+        if (fgRef.current) {
+            fgRef.current.zoom(fgRef.current.zoom() / 1.2, 400);
+        }
+    };
+
+    const handleResetZoom = () => {
+        if (fgRef.current) {
+            fgRef.current.zoomToFit(400);
+        }
+    };
+
+    const handleSearch = (query: string) => {
+        if (query.trim()) {
+            router.push(`/${locale}/console?q=${encodeURIComponent(query)}`);
+        }
+    };
 
     useEffect(() => {
         const fetchData = async () => {
@@ -214,41 +241,59 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
             <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 w-1/2 max-w-lg">
                 <div className="relative">
                     <input
+                        ref={inputRef}
                         type="text"
+                        aria-label={t('inputPlaceholder')}
                         placeholder={t('inputPlaceholder')}
                         className="w-full bg-[#1C1E2D] text-gray-300 rounded-md py-3 px-4 pl-4 pr-12 border border-gray-700 focus:outline-none focus:border-[#38BDF8] focus:ring-1 focus:ring-[#38BDF8]"
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') {
-                                const target = e.target as HTMLInputElement;
-                                if (target.value.trim()) {
-                                    // Use router.push for client-side navigation, including locale
-                                    // window.location.href = `/${locale}/console?q=${encodeURIComponent(target.value)}`;
-                                    // If we use Next.js router, we need to import it.
-                                    // Since this is already a client component, let's just use window.location.href for simplicity and robustness to ensure full reload if needed, 
-                                    // OR better: use router.push if available. 
-                                    // Let's stick to the user's issue: URL was wrong.
-                                    window.location.href = `/${locale}/console?q=${encodeURIComponent(target.value)}`;
-                                }
+                                handleSearch(e.currentTarget.value);
                             }
                         }}
                     />
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                    <button
+                        type="button"
+                        aria-label={t('search')}
+                        title={t('search')}
+                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-[#38BDF8] transition-colors"
+                        onClick={() => {
+                            if (inputRef.current) {
+                                handleSearch(inputRef.current.value);
+                            }
+                        }}
+                    >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
                         </svg>
-                    </div>
+                    </button>
                 </div>
             </div>
 
             {/* Zoom controls */}
             <div className="absolute bottom-4 right-4 flex space-x-2">
-                <button className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700" aria-label={t('zoomIn')}>
+                <button
+                    onClick={handleZoomIn}
+                    className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700"
+                    aria-label={t('zoomIn')}
+                    title={t('zoomIn')}
+                >
                     <span className="text-xl">+</span>
                 </button>
-                <button className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700" aria-label={t('zoomOut')}>
+                <button
+                    onClick={handleZoomOut}
+                    className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700"
+                    aria-label={t('zoomOut')}
+                    title={t('zoomOut')}
+                >
                     <span className="text-xl">-</span>
                 </button>
-                <button className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700">
+                <button
+                    onClick={handleResetZoom}
+                    className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700"
+                    aria-label={t('resetZoom')}
+                    title={t('resetZoom')}
+                >
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
                     </svg>
