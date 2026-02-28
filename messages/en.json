@@ -71,7 +71,8 @@
         "signalLost": "Signal Lost. Knowledge corrupted.",
         "accessDenied": "Access Denied. Encrypted Signal.",
         "archiveId": "ARCHIVE_ID",
-        "lastUpdate": "LAST_UPDATE"
+        "lastUpdate": "LAST_UPDATE",
+        "closePanel": "Close Panel"
     },
     "ShipLog": {
         "title": "Ship Log",
