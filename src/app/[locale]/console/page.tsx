@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -156,7 +156,7 @@ export default function ConsolePage() {
     }, [activeTab]);
 
 
-    const handleSendMessage = async (text: string) => {
+    const handleSendMessage = useCallback(async (text: string) => {
         if (!text.trim()) return;
 
         // Optimistic clear or clear after success?
@@ -246,7 +246,31 @@ export default function ConsolePage() {
                 setIsCommsLoading(false);
             }
         }
-    };
+    }, [activeTab, locale, t]);
+
+    // Handle link clicks from markdown
+    const handleMarkdownLinkClick = useCallback((e: React.MouseEvent<HTMLSpanElement>, href?: string) => {
+        e.preventDefault();
+        const q = new URLSearchParams(href?.split('?')[1]).get('q');
+        if (q) {
+            if (activeTab !== 'ai') setActiveTab('ai');
+            // Small timeout to allow tab switch
+            setTimeout(() => handleSendMessage(q), 100);
+        }
+    }, [activeTab, handleSendMessage]);
+
+    // Memoize the components map so ReactMarkdown doesn't re-render its children on every state change
+    const markdownComponents = useMemo(() => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        a: ({ ...props }: any) => (
+            <span
+                className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4"
+                onClick={(e) => handleMarkdownLinkClick(e, props.href)}
+            >
+                {props.children}
+            </span>
+        )
+    }), [handleMarkdownLinkClick]);
 
     // Replace [[Link]] with clickable spans that trigger a new message
     const renderContent = (content: string) => {
@@ -257,26 +281,7 @@ export default function ConsolePage() {
         };
 
         return (
-            <ReactMarkdown
-                components={{
-                    a: ({ ...props }) => (
-                        <span
-                            className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4"
-                            onClick={(e) => {
-                                e.preventDefault();
-                                const q = new URLSearchParams(props.href?.split('?')[1]).get('q');
-                                if (q) {
-                                    if (activeTab !== 'ai') setActiveTab('ai');
-                                    // Small timeout to allow tab switch
-                                    setTimeout(() => handleSendMessage(q), 100);
-                                }
-                            }}
-                        >
-                            {props.children}
-                        </span>
-                    )
-                }}
-            >
+            <ReactMarkdown components={markdownComponents}>
                 {formatLinks(content)}
             </ReactMarkdown>
         );
