@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/navigation';
@@ -61,7 +61,7 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
         fetchData();
     }, [topicId, locale]);
 
-    const handleLinkClick = async (linkName: string) => {
+    const handleLinkClick = useCallback(async (linkName: string) => {
         console.log('[KnowledgePanel] Link Clicked:', linkName);
         // Check if topic exists and is discovered via API name lookup
         try {
@@ -84,7 +84,30 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
             console.error(e);
             router.push(`/console?q=${encodeURIComponent(linkName)}`);
         }
-    };
+    }, [locale, router, onNavigate]);
+
+    const handleMarkdownLinkClick = useCallback((e: React.MouseEvent<HTMLSpanElement>, linkName: string) => {
+        e.preventDefault();
+        handleLinkClick(linkName);
+    }, [handleLinkClick]);
+
+    const markdownComponents = useMemo(() => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        a: ({ href, children, ...props }: any) => {
+            if (href && href.startsWith('#wiki-')) {
+                const linkName = decodeURIComponent(href.replace('#wiki-', ''));
+                return (
+                    <span
+                        className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4 font-bold"
+                        onClick={(e) => handleMarkdownLinkClick(e, linkName)}
+                    >
+                        {children}
+                    </span>
+                );
+            }
+            return <a href={href} {...props} className="text-cyan-500 underline" target="_blank" rel="noopener noreferrer">{children}</a>
+        }
+    }), [handleMarkdownLinkClick]);
 
     const renderContent = (content: string) => {
         // Replace [[Link]] with [Link](#wiki-Link)
@@ -92,27 +115,7 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
         const processedContent = content.replace(/\[\[(.*?)\]\]/g, '[$1](#wiki-$1)');
 
         return (
-            <ReactMarkdown
-                components={{
-                    a: ({ href, children, ...props }) => {
-                        if (href && href.startsWith('#wiki-')) {
-                            const linkName = decodeURIComponent(href.replace('#wiki-', ''));
-                            return (
-                                <span
-                                    className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4 font-bold"
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        handleLinkClick(linkName);
-                                    }}
-                                >
-                                    {children}
-                                </span>
-                            );
-                        }
-                        return <a href={href} {...props} className="text-cyan-500 underline" target="_blank" rel="noopener noreferrer">{children}</a>
-                    }
-                }}
-            >
+            <ReactMarkdown components={markdownComponents}>
                 {processedContent}
             </ReactMarkdown>
         );
