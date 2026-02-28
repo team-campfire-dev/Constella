@@ -71,7 +71,8 @@
         "signalLost": "신호 유실. 지식이 손상됨.",
         "accessDenied": "접근 거부. 암호화된 신호.",
         "archiveId": "아카이브_ID",
-        "lastUpdate": "마지막_업데이트"
+        "lastUpdate": "마지막_업데이트",
+        "closePanel": "패널 닫기"
     },
     "ShipLog": {
         "title": "항해 일지",
