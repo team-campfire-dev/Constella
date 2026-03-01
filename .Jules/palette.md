@@ -9,3 +9,7 @@
 ## 2026-02-25 - [Broken Visual Controls]
 **Learning:** Visual controls (zoom buttons, search icons) without handlers or accessibility attributes frustrate users who expect interactivity. A "Reset Zoom" function is critical for canvas-based visualizations where users can easily get lost.
 **Action:** Always ensure UI controls (even placeholders) are functional and accessible (aria-label, keyboard support) before shipping. Add a "Reset View" mechanism for all interactive canvas elements.
+
+## 2026-03-01 - [Hidden Context in Custom Modals]
+**Learning:** Custom floating UI components (like sliding side panels or modals) often implement custom "Close" (X) buttons visually, but neglect `aria-label`, leaving screen reader users confused about the button's purpose. Additionally, `focus-visible` states are critical here because keyboard users will often tab directly to these close buttons upon panel activation.
+**Action:** Always verify that purely visual "Close" buttons inside modals/panels have `aria-label`, an explicit `title` for hover tooltips, and distinct `focus-visible` styles to ensure full accessibility.
