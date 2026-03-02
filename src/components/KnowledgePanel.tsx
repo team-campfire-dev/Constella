@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/navigation';
@@ -86,33 +86,40 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
         }
     };
 
+    const handleLinkClickRef = useRef(handleLinkClick);
+    useEffect(() => {
+        handleLinkClickRef.current = handleLinkClick;
+    });
+
+    // ⚡ Bolt: Memoize ReactMarkdown components to prevent unmounting and remounting of all elements on every render.
+    // Impact: Eliminates expensive DOM recreations during state updates, reducing main thread blocking.
+    const markdownComponents = useMemo(() => ({
+        a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'> & { href?: string }) => {
+            if (href && href.startsWith('#wiki-')) {
+                const linkName = decodeURIComponent(href.replace('#wiki-', ''));
+                return (
+                    <span
+                        className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4 font-bold"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            handleLinkClickRef.current(linkName);
+                        }}
+                    >
+                        {children}
+                    </span>
+                );
+            }
+            return <a href={href} {...props} className="text-cyan-500 underline" target="_blank" rel="noopener noreferrer">{children}</a>
+        }
+    }), []);
+
     const renderContent = (content: string) => {
         // Replace [[Link]] with [Link](#wiki-Link)
         // Using hash link prevents page navigation default and is safe for Markdown
         const processedContent = content.replace(/\[\[(.*?)\]\]/g, '[$1](#wiki-$1)');
 
         return (
-            <ReactMarkdown
-                components={{
-                    a: ({ href, children, ...props }) => {
-                        if (href && href.startsWith('#wiki-')) {
-                            const linkName = decodeURIComponent(href.replace('#wiki-', ''));
-                            return (
-                                <span
-                                    className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4 font-bold"
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        handleLinkClick(linkName);
-                                    }}
-                                >
-                                    {children}
-                                </span>
-                            );
-                        }
-                        return <a href={href} {...props} className="text-cyan-500 underline" target="_blank" rel="noopener noreferrer">{children}</a>
-                    }
-                }}
-            >
+            <ReactMarkdown components={markdownComponents}>
                 {processedContent}
             </ReactMarkdown>
         );
