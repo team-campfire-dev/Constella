@@ -72,7 +72,7 @@
         "accessDenied": "Access Denied. Encrypted Signal.",
         "archiveId": "ARCHIVE_ID",
         "lastUpdate": "LAST_UPDATE",
-        "close": "Close panel"
+        "close": "Close panel",
         "closePanel": "Close Panel"
     },
     "ShipLog": {
