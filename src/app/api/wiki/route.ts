@@ -4,12 +4,23 @@ import { authOptions } from "@/lib/auth";
 import logger from "@/lib/logger";
 import { withDualTransaction } from '@/lib/transaction';
 import { syncArticleToGraph } from '@/lib/graph';
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 5000; // 5 seconds per request for wiki edits
 
 export async function POST(req: Request) {
     // 1. 인증 확인
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting to prevent spamming wiki updates
+    if (!checkRateLimit('wiki_edit', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: wiki_edit`);
+        return NextResponse.json({ error: 'Too many requests. Please wait before editing again.' }, { status: 429 });
     }
 
     try {
