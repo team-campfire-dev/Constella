@@ -132,11 +132,6 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
                 </h2>
                 <button
                     onClick={onClose}
-                    aria-label={t('close')}
-                    title={t('close')}
-                    className="p-1 hover:bg-cyan-900/50 rounded text-cyan-500 hover:text-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors"
-                >
-                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     aria-label={t('closePanel')}
                     title={t('closePanel')}
                     className="p-1 hover:bg-cyan-900/50 rounded text-cyan-500 hover:text-cyan-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"

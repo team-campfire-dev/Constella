@@ -72,7 +72,7 @@
         "accessDenied": "접근 거부. 암호화된 신호.",
         "archiveId": "아카이브_ID",
         "lastUpdate": "마지막_업데이트",
-        "close": "패널 닫기"
+        "close": "패널 닫기",
         "closePanel": "패널 닫기"
     },
     "ShipLog": {
