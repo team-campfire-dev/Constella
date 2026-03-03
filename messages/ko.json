@@ -73,6 +73,7 @@
         "archiveId": "아카이브_ID",
         "lastUpdate": "마지막_업데이트",
         "close": "패널 닫기"
+        "closePanel": "패널 닫기"
     },
     "ShipLog": {
         "title": "항해 일지",
