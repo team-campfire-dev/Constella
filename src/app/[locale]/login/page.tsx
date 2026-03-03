@@ -4,27 +4,44 @@ import { signIn } from "next-auth/react"
 import { useTranslations } from "next-intl"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { Loader2 } from "lucide-react"
 
 export default function LoginPage() {
     const t = useTranslations('Login')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
+    const [isLoading, setIsLoading] = useState(false)
+    const [isGoogleLoading, setIsGoogleLoading] = useState(false)
     const router = useRouter()
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        const result = await signIn("credentials", {
-            username: email,
-            password,
-            redirect: false,
-        })
+        setIsLoading(true)
+        try {
+            const result = await signIn("credentials", {
+                username: email,
+                password,
+                redirect: false,
+            })
 
-        if (result?.ok) {
-            router.push('/')
-            router.refresh()
-        } else {
-            // Handle error (optional: add toast or alert)
-            console.error("Login failed")
+            if (result?.ok) {
+                router.push('/')
+                router.refresh()
+            } else {
+                // Handle error (optional: add toast or alert)
+                console.error("Login failed")
+            }
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const handleGoogleSignIn = async () => {
+        setIsGoogleLoading(true)
+        try {
+            await signIn("google", { callbackUrl: "/" })
+        } finally {
+            setIsGoogleLoading(false)
         }
     }
 
@@ -78,8 +95,10 @@ export default function LoginPage() {
                         <div>
                             <button
                                 type="submit"
-                                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                disabled={isLoading || isGoogleLoading}
+                                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
+                                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                 {t('signIn')}
                             </button>
                         </div>
@@ -98,9 +117,12 @@ export default function LoginPage() {
 
                     <div>
                         <button
-                            onClick={() => signIn("google", { callbackUrl: "/" })}
-                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                            type="button"
+                            onClick={handleGoogleSignIn}
+                            disabled={isLoading || isGoogleLoading}
+                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
+                            {isGoogleLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {t('signInGoogle')}
                         </button>
                     </div>
