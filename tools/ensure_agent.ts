@@ -25,7 +25,6 @@ async function main() {
                 data: {
                     email: email,
                     name: 'Local Agent',
-                    role: 'ADMIN',
                 },
             })
             console.log('User created:', newUser.email)

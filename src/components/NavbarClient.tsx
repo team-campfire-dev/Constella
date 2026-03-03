@@ -63,6 +63,8 @@ export default function NavbarClient({ user }: NavbarClientProps) {
                             type="button"
                             className="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-cyan-500"
                             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                            aria-expanded={mobileMenuOpen}
+                            aria-controls="mobile-menu"
                         >
                             <span className="sr-only">{t('menuOpen')}</span>
                             {mobileMenuOpen ? (
@@ -77,7 +79,7 @@ export default function NavbarClient({ user }: NavbarClientProps) {
 
             {/* Mobile Menu */}
             {mobileMenuOpen && (
-                <div className="sm:hidden bg-[#0B0C15]/95 backdrop-blur-xl border-b border-white/10">
+                <div id="mobile-menu" className="sm:hidden bg-[#0B0C15]/95 backdrop-blur-xl border-b border-white/10">
                     <div className="space-y-1 px-2 pb-3 pt-2">
                         {user ? (
                             <>

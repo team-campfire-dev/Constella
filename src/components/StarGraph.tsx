@@ -256,7 +256,7 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                         type="button"
                         aria-label={t('search')}
                         title={t('search')}
-                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-[#38BDF8] transition-colors"
+                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-[#38BDF8] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] rounded-r-md"
                         onClick={() => {
                             if (inputRef.current) {
                                 handleSearch(inputRef.current.value);
@@ -274,7 +274,7 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
             <div className="absolute bottom-4 right-4 flex space-x-2">
                 <button
                     onClick={handleZoomIn}
-                    className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700"
+                    className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
                     aria-label={t('zoomIn')}
                     title={t('zoomIn')}
                 >
@@ -282,7 +282,7 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                 </button>
                 <button
                     onClick={handleZoomOut}
-                    className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700"
+                    className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
                     aria-label={t('zoomOut')}
                     title={t('zoomOut')}
                 >
@@ -290,7 +290,7 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
                 </button>
                 <button
                     onClick={handleResetZoom}
-                    className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700"
+                    className="bg-[#1C1E2D] p-2 rounded text-gray-400 hover:text-white border border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
                     aria-label={t('resetZoom')}
                     title={t('resetZoom')}
                 >
