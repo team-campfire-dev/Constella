@@ -4,9 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { processUserQuery } from "@/lib/wiki-engine";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
 
-// 🛡️ Sentinel: Simple in-memory rate limiter to prevent DoS/API abuse
-const rateLimitMap = new Map<string, number>();
 const RATE_LIMIT_WINDOW_MS = 3000; // 3 seconds per request
 
 export async function POST(req: Request) {
@@ -18,13 +17,10 @@ export async function POST(req: Request) {
     const userId = session.user.id;
 
     // 🛡️ Sentinel: Apply rate limiting
-    const now = Date.now();
-    const lastRequestTime = rateLimitMap.get(userId) || 0;
-    if (now - lastRequestTime < RATE_LIMIT_WINDOW_MS) {
-        logger.warn(`Rate limit exceeded for user: ${userId}`);
+    if (!checkRateLimit('chat', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: chat`);
         return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
     }
-    rateLimitMap.set(userId, now);
 
     try {
         const { message, language } = await req.json();

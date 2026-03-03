@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
 import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 1000; // 1 second per request for chat messages
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -12,6 +15,12 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting to prevent spam
+    if (!checkRateLimit('comms_post', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: comms_post`);
+        return NextResponse.json({ error: 'You are sending messages too quickly.' }, { status: 429 });
+    }
 
     try {
         const { message, channel = 'global' } = await req.json();
