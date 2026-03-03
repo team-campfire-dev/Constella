@@ -7,6 +7,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { useTranslations } from 'next-intl';
 import clsx from 'clsx';
 // import UserAvatar from '@/components/UserAvatar';
+import React from 'react';
 
 interface Message {
     id: string;
@@ -25,6 +26,53 @@ interface CommsMessage {
         image?: string | null;
     };
 }
+
+// Helper to format wiki links into markdown links
+const formatLinks = (text: string) => {
+    return text.replace(/\[\[(.*?)\]\]/g, (match, p1) => {
+        return `[${p1}](?q=${encodeURIComponent(p1)})`;
+    });
+};
+
+// Memoized Chat Message Item to prevent re-rendering expensive ReactMarkdown on every keystroke
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ChatMessageItem = React.memo(({ msg, markdownComponents, t }: { msg: Message, markdownComponents: any, t: any }) => (
+    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+        <div className={`max-w-[80%] rounded-lg p-4 border ${msg.role === 'user'
+            ? 'bg-cyan-900/30 border-cyan-500/50 text-cyan-100'
+            : 'bg-slate-900/80 border-cyan-800 text-slate-300'
+            }`}>
+            <div className="text-[10px] uppercase opacity-50 mb-1 flex justify-between gap-4">
+                <span>{msg.role === 'user' ? t('roleUser') : t('roleAI')}</span>
+                <span>{msg.timestamp.toLocaleTimeString()}</span>
+            </div>
+            <div className="prose prose-invert prose-p:my-1 prose-headings:text-cyan-400 prose-strong:text-cyan-300 text-sm leading-relaxed">
+                {msg.role === 'assistant' ? (
+                    <ReactMarkdown components={markdownComponents}>
+                        {formatLinks(msg.content)}
+                    </ReactMarkdown>
+                ) : (
+                    msg.content
+                )}
+            </div>
+        </div>
+    </div>
+));
+ChatMessageItem.displayName = 'ChatMessageItem';
+
+// Memoized Comms Message Item
+const CommsMessageItem = React.memo(({ msg }: { msg: CommsMessage }) => (
+    <div className="flex flex-col gap-1 mb-4">
+        <div className="flex items-center gap-2 text-xs text-cyan-600">
+            <span className="font-bold text-cyan-400">{msg.user.name}</span>
+            <span className="opacity-50">{msg.timestamp.toLocaleTimeString()}</span>
+        </div>
+        <div className="bg-slate-900/40 border border-cyan-900/30 rounded p-3 text-cyan-100 text-sm">
+            {msg.content}
+        </div>
+    </div>
+));
+CommsMessageItem.displayName = 'CommsMessageItem';
 
 export default function ConsolePage() {
     const t = useTranslations('Console');
@@ -272,21 +320,6 @@ export default function ConsolePage() {
         )
     }), [handleMarkdownLinkClick]);
 
-    // Replace [[Link]] with clickable spans that trigger a new message
-    const renderContent = (content: string) => {
-        const formatLinks = (text: string) => {
-            return text.replace(/\[\[(.*?)\]\]/g, (match, p1) => {
-                return `[${p1}](?q=${encodeURIComponent(p1)})`;
-            });
-        };
-
-        return (
-            <ReactMarkdown components={markdownComponents}>
-                {formatLinks(content)}
-            </ReactMarkdown>
-        );
-    };
-
     return (
         <DashboardLayout>
             <div className="flex flex-col h-full bg-black/80 text-cyan-50 font-mono relative overflow-hidden">
@@ -339,20 +372,12 @@ export default function ConsolePage() {
                             )}
 
                             {messages.map((msg) => (
-                                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[80%] rounded-lg p-4 border ${msg.role === 'user'
-                                        ? 'bg-cyan-900/30 border-cyan-500/50 text-cyan-100'
-                                        : 'bg-slate-900/80 border-cyan-800 text-slate-300'
-                                        }`}>
-                                        <div className="text-[10px] uppercase opacity-50 mb-1 flex justify-between gap-4">
-                                            <span>{msg.role === 'user' ? t('roleUser') : t('roleAI')}</span>
-                                            <span>{msg.timestamp.toLocaleTimeString()}</span>
-                                        </div>
-                                        <div className="prose prose-invert prose-p:my-1 prose-headings:text-cyan-400 prose-strong:text-cyan-300 text-sm leading-relaxed">
-                                            {msg.role === 'assistant' ? renderContent(msg.content) : msg.content}
-                                        </div>
-                                    </div>
-                                </div>
+                                <ChatMessageItem
+                                    key={msg.id}
+                                    msg={msg}
+                                    markdownComponents={markdownComponents}
+                                    t={t}
+                                />
                             ))}
 
                             {isLoading && (
@@ -377,15 +402,10 @@ export default function ConsolePage() {
                             )}
 
                             {commsMessages.map((msg) => (
-                                <div key={msg.id} className="flex flex-col gap-1 mb-4">
-                                    <div className="flex items-center gap-2 text-xs text-cyan-600">
-                                        <span className="font-bold text-cyan-400">{msg.user.name}</span>
-                                        <span className="opacity-50">{msg.timestamp.toLocaleTimeString()}</span>
-                                    </div>
-                                    <div className="bg-slate-900/40 border border-cyan-900/30 rounded p-3 text-cyan-100 text-sm">
-                                        {msg.content}
-                                    </div>
-                                </div>
+                                <CommsMessageItem
+                                    key={msg.id}
+                                    msg={msg}
+                                />
                             ))}
                         </>
                     )}
