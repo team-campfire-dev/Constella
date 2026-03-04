@@ -60,8 +60,10 @@ export default function ShipLogPage() {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-2 custom-scrollbar">
                         {logs.map(log => (
-                            <div key={log.id}
-                                className="bg-slate-900/50 border border-cyan-500/30 p-4 rounded-lg hover:bg-cyan-900/20 transition-all cursor-pointer group"
+                            <button
+                                key={log.id}
+                                type="button"
+                                className="text-left w-full bg-slate-900/50 border border-cyan-500/30 p-4 rounded-lg hover:bg-cyan-900/20 transition-all cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
                                 onClick={() => setSelectedTopicId(log.topicId)}
                             >
                                 <h2 className="text-xl font-bold text-cyan-200 group-hover:text-cyan-100 mb-2 capitalize">
@@ -73,7 +75,7 @@ export default function ShipLogPage() {
                                         VIEW DATA &gt;
                                     </span>
                                 </div>
-                            </div>
+                            </button>
                         ))}
                     </div>
                 )}

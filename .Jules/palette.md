@@ -17,3 +17,7 @@
 ## 2026-03-03 - [Missing Aria-Expanded on Mobile Menus]
 **Learning:** Screen reader users rely on `aria-expanded` to know whether a toggle button has opened a menu, and `aria-controls` to understand the relationship between the button and the menu container. These are frequently missed on responsive mobile navigation buttons.
 **Action:** Always verify that mobile hamburger menus and other toggleable navigation elements include dynamic `aria-expanded` and explicit `aria-controls` attributes linking to the menu's ID.
+
+## 2026-03-04 - [Inaccessible Interactive Cards]
+**Learning:** Using `div` with `onClick` for interactive elements like cards (e.g., Ship Log entries) makes them completely inaccessible to keyboard users, as they cannot be tabbed to or activated with Enter/Space.
+**Action:** Always use semantic `<button type="button">` for interactive cards. Add layout classes like `text-left w-full` to preserve styling, and explicit `focus-visible:ring-2` to provide clear keyboard focus indicators.
