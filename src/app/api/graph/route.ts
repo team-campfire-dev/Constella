@@ -99,6 +99,9 @@ export async function GET(req: NextRequest) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const links: any[] = [];
 
+            // Optimization: Convert array to Set for O(1) lookups instead of O(N) Array.includes() inside the loop
+            const discoveredNamesSet = new Set(discoveredNames);
+
             result.records.forEach(record => {
                 const sourceNode = record.get('n'); // Known Node
                 const rel = record.get('r');
@@ -125,7 +128,7 @@ export async function GET(req: NextRequest) {
                 if (targetNode) {
                     const id = targetNode.identity.toString();
                     const canonicalName = targetNode.properties.name;
-                    const isDiscovered = discoveredNames.includes(canonicalName);
+                    const isDiscovered = discoveredNamesSet.has(canonicalName);
 
                     if (!nodesMap.has(id)) {
                         if (isDiscovered) {
