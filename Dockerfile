@@ -29,6 +29,7 @@ ENV NEXT_TELEMETRY_DISABLED 1
 
 # If using prisma
 RUN npx prisma generate
+RUN npx prisma generate --schema=prisma/content/schema.prisma
 
 RUN npm run build
 

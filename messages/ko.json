@@ -91,6 +91,11 @@
         "processing": "쿼리 처리 중...",
         "connectionLost": "⚠️ 연결 끊김. 함선 AI가 오프라인입니다.",
         "inputPlaceholder": "질문을 입력하세요...",
-        "transmit": "전송"
+        "transmit": "전송",
+        "commsLive": "실시간 연결됨",
+        "commsReconnecting": "재연결 중...",
+        "commsDisconnected": "연결 끊김",
+        "noSignals": "감지된 신호 없음.",
+        "newMessages": "새 메시지"
     }
 }

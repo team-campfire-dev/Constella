@@ -5,6 +5,7 @@ import prismaContent from "@/lib/prisma-content";
 import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rate-limit";
+import commsPubSub from "@/lib/comms-pubsub";
 
 const RATE_LIMIT_WINDOW_MS = 1000; // 1 second per request for chat messages
 
@@ -52,18 +53,24 @@ export async function POST(req: NextRequest) {
             select: { name: true, image: true }
         });
 
+        const messageData = {
+            id: newMsg.id,
+            content: newMsg.content,
+            timestamp: newMsg.createdAt,
+            channel,
+            user: {
+                id: userId,
+                name: userDetails?.name || 'Unknown',
+                image: userDetails?.image
+            }
+        };
+
+        // 3. 📡 Publish to SSE subscribers for real-time delivery
+        commsPubSub.emit(`comms:${channel}`, messageData);
+
         return NextResponse.json({
             success: true,
-            data: {
-                id: newMsg.id,
-                content: newMsg.content,
-                timestamp: newMsg.createdAt,
-                user: {
-                    id: userId,
-                    name: userDetails?.name || 'Unknown',
-                    image: userDetails?.image
-                }
-            }
+            data: messageData
         });
     } catch (error) {
         logger.error("Comms API Error", { error: error instanceof Error ? error.message : error });

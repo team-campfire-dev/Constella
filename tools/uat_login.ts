@@ -53,7 +53,7 @@ async function runUAT() {
         try {
             await page.waitForSelector("canvas", { timeout: 15000 });
             console.log("Star Map loaded.");
-        } catch (e) {
+        } catch {
             console.error("Star Map failed to load (canvas not found).");
         }
         await page.screenshot({ path: path.join(verificationDir, 'star_map.png') });
@@ -74,7 +74,7 @@ async function runUAT() {
 
     } catch (error) {
         console.error("Test failed:", error);
-        await page.screenshot({ path: path.join(verificationDir, 'failure.png') }).catch(() => {});
+        await page.screenshot({ path: path.join(verificationDir, 'failure.png') }).catch(() => { });
         process.exit(1);
     } finally {
         await browser.close();

@@ -91,16 +91,28 @@ export default function ConsolePage() {
     // Comms Chat State
     const [commsMessages, setCommsMessages] = useState<CommsMessage[]>([]);
     const [isCommsLoading, setIsCommsLoading] = useState(false);
+    const [commsStatus, setCommsStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('disconnected');
+    const [hasNewMessages, setHasNewMessages] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-    const scrollToBottom = () => {
+    // Check if user is scrolled near the bottom
+    const isNearBottom = useCallback(() => {
+        const container = messagesContainerRef.current;
+        if (!container) return true;
+        const threshold = 100; // px from bottom
+        return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+    }, []);
+
+    const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
+        setHasNewMessages(false);
+    }, []);
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages, commsMessages, activeTab]);
+    }, [messages, commsMessages, activeTab, scrollToBottom]);
 
     // AI History Loading
     const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -174,11 +186,12 @@ export default function ConsolePage() {
     }, [initialQuery, historyLoaded, activeTab]);
 
 
-    // Comms Polling
+    // Comms: Initial load + SSE real-time stream
     useEffect(() => {
-        let pollInterval: NodeJS.Timeout;
+        let eventSource: EventSource | null = null;
 
-        const fetchComms = async () => {
+        const initComms = async () => {
+            // 1. Load history via existing REST endpoint
             try {
                 const res = await fetch('/api/comms?channel=global');
                 const data = await res.json();
@@ -189,19 +202,56 @@ export default function ConsolePage() {
                     })));
                 }
             } catch (e) {
-                console.error("Comms poll error", e);
+                console.error("Failed to load comms history", e);
             }
+
+            // 2. Connect SSE stream for real-time updates
+            eventSource = new EventSource('/api/comms/stream?channel=global');
+
+            eventSource.onopen = () => {
+                setCommsStatus('connected');
+            };
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const newMsg = JSON.parse(event.data);
+                    setCommsMessages(prev => {
+                        // Deduplicate by id
+                        if (prev.some(m => m.id === newMsg.id)) return prev;
+                        return [...prev, {
+                            ...newMsg,
+                            timestamp: new Date(newMsg.timestamp)
+                        }];
+                    });
+
+                    // Show "new messages" banner if not scrolled to bottom
+                    if (!isNearBottom()) {
+                        setHasNewMessages(true);
+                    }
+                } catch (e) {
+                    console.error("Failed to parse SSE message", e);
+                }
+            };
+
+            eventSource.onerror = () => {
+                setCommsStatus('reconnecting');
+                // EventSource auto-reconnects by default
+            };
         };
 
         if (activeTab === 'comms') {
-            fetchComms();
-            pollInterval = setInterval(fetchComms, 3000);
+            initComms();
+        } else {
+            setCommsStatus('disconnected');
         }
 
         return () => {
-            if (pollInterval) clearInterval(pollInterval);
-        }
-    }, [activeTab]);
+            if (eventSource) {
+                eventSource.close();
+                setCommsStatus('disconnected');
+            }
+        };
+    }, [activeTab, isNearBottom]);
 
 
     const handleSendMessage = useCallback(async (text: string) => {
@@ -261,7 +311,7 @@ export default function ConsolePage() {
                 setIsLoading(false);
             }
         } else {
-            // Comms
+            // Comms — SSE will deliver the message back, no need for follow-up GET
             setIsCommsLoading(true);
             try {
                 const res = await fetch('/api/comms', {
@@ -273,19 +323,10 @@ export default function ConsolePage() {
                     })
                 });
                 const data = await res.json();
-                if (data.success) {
-                    // Trigger refresh
-                    const pollRes = await fetch('/api/comms?channel=global');
-                    const pollData = await pollRes.json();
-                    if (pollData.success) {
-                        setCommsMessages(pollData.data.map((msg: { id: string; content: string; timestamp: string; user: { id: string; name: string; image?: string | null } }) => ({
-                            ...msg,
-                            timestamp: new Date(msg.timestamp)
-                        })));
-                    }
-                } else {
+                if (!data.success) {
                     throw new Error(data.error || 'Failed to send');
                 }
+                // Message will arrive via SSE stream automatically
             } catch (err) {
                 console.error("Failed to send comms", err);
                 // Restore input on error
@@ -353,14 +394,34 @@ export default function ConsolePage() {
                             </button>
                         </div>
                     </div>
-                    <div className="flex gap-2 text-xs text-cyan-700">
-                        <span className="animate-pulse">●</span> {t('statusOnline')}
+                    <div className="flex gap-2 items-center text-xs text-cyan-700">
+                        {activeTab === 'comms' ? (
+                            <>
+                                <span className={clsx(
+                                    'inline-block w-2 h-2 rounded-full',
+                                    commsStatus === 'connected' && 'bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.7)]',
+                                    commsStatus === 'reconnecting' && 'bg-amber-400 animate-pulse shadow-[0_0_6px_rgba(251,191,36,0.7)]',
+                                    commsStatus === 'disconnected' && 'bg-red-400'
+                                )} />
+                                <span className={clsx(
+                                    commsStatus === 'connected' && 'text-emerald-500',
+                                    commsStatus === 'reconnecting' && 'text-amber-500',
+                                    commsStatus === 'disconnected' && 'text-red-500'
+                                )}>
+                                    {commsStatus === 'connected' ? t('commsLive') : commsStatus === 'reconnecting' ? t('commsReconnecting') : t('commsDisconnected')}
+                                </span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="animate-pulse">●</span> {t('statusOnline')}
+                            </>
+                        )}
                         <span>{t('version')}</span>
                     </div>
                 </div>
 
                 {/* Messages Area */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar z-20 scroll-pt-4">
+                <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar z-20 scroll-pt-4 relative">
                     {/* AI Chat View */}
                     {activeTab === 'ai' && (
                         <>
@@ -411,6 +472,16 @@ export default function ConsolePage() {
                     )}
 
                     <div ref={messagesEndRef} />
+
+                    {/* New Messages Banner */}
+                    {hasNewMessages && activeTab === 'comms' && (
+                        <button
+                            onClick={scrollToBottom}
+                            className="sticky bottom-2 left-1/2 -translate-x-1/2 bg-cyan-600/90 hover:bg-cyan-500/90 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg shadow-cyan-500/30 backdrop-blur-sm transition-all animate-bounce z-30 border border-cyan-400/50"
+                        >
+                            ↓ {t('newMessages')}
+                        </button>
+                    )}
                 </div>
 
                 {/* Input Area */}

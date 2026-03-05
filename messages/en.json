@@ -91,6 +91,11 @@
         "processing": "Processing Query...",
         "connectionLost": "⚠️ Connection Lost. The Ship's AI is offline.",
         "inputPlaceholder": "Type your query...",
-        "transmit": "Transmit"
+        "transmit": "Transmit",
+        "commsLive": "LIVE",
+        "commsReconnecting": "RECONNECTING...",
+        "commsDisconnected": "DISCONNECTED",
+        "noSignals": "No signals detected.",
+        "newMessages": "New Messages"
     }
 }
