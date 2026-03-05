@@ -22,7 +22,8 @@ test('Neo4j driver initialization throws error when env vars are missing', async
         // This should now THROW an error
         await assert.rejects(
             async () => {
-                await import('./neo4j.ts?cache-bust=' + Date.now());
+                const { getDriver } = await import('./neo4j.ts?cache-bust=' + Date.now());
+                getDriver();
             },
             {
                 message: /Missing Neo4j environment variables/

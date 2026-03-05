@@ -4,11 +4,22 @@ import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
 import { processUserQuery } from "@/lib/wiki-engine";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 2000; // 2 seconds per request for topic viewing/generation
 
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting to prevent DoS via expensive AI generation triggered by GET
+    if (!checkRateLimit('topic_get', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: topic_get`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -21,8 +32,6 @@ export async function GET(req: Request) {
     }
 
     try {
-        const userId = session.user.id;
-
         // Find Topic first (by ID or Name)
         let topic;
 

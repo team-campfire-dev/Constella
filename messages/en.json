@@ -61,6 +61,7 @@
         "signalTransmission": "Transmitting signal...",
         "zoomIn": "Zoom In",
         "zoomOut": "Zoom Out",
+        "resetZoom": "Reset Zoom",
         "loading": "Loading Star Map..."
     },
     "KnowledgePanel": {
@@ -70,7 +71,9 @@
         "signalLost": "Signal Lost. Knowledge corrupted.",
         "accessDenied": "Access Denied. Encrypted Signal.",
         "archiveId": "ARCHIVE_ID",
-        "lastUpdate": "LAST_UPDATE"
+        "lastUpdate": "LAST_UPDATE",
+        "close": "Close panel",
+        "closePanel": "Close Panel"
     },
     "ShipLog": {
         "title": "Ship Log",
@@ -88,6 +91,11 @@
         "processing": "Processing Query...",
         "connectionLost": "⚠️ Connection Lost. The Ship's AI is offline.",
         "inputPlaceholder": "Type your query...",
-        "transmit": "Transmit"
+        "transmit": "Transmit",
+        "commsLive": "LIVE",
+        "commsReconnecting": "RECONNECTING...",
+        "commsDisconnected": "DISCONNECTED",
+        "noSignals": "No signals detected.",
+        "newMessages": "New Messages"
     }
 }

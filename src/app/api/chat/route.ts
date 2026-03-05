@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { processUserQuery } from "@/lib/wiki-engine";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 3000; // 3 seconds per request
 
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
@@ -13,6 +16,11 @@ export async function POST(req: Request) {
 
     const userId = session.user.id;
 
+    // 🛡️ Sentinel: Apply rate limiting
+    if (!checkRateLimit('chat', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: chat`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
 
     try {
         const { message, language } = await req.json();
