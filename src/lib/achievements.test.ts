@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import prismaContent from '@/lib/prisma-content';
 import { ACHIEVEMENT_DEFINITIONS, checkAndGrantAchievements } from './achievements';

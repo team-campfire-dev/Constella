@@ -49,8 +49,8 @@ describe('commsPubSub', () => {
 
         expect(globalMessages).toHaveLength(1);
         expect(teamMessages).toHaveLength(1);
-        expect((globalMessages[0] as any).content).toBe('global msg');
-        expect((teamMessages[0] as any).content).toBe('team msg');
+        expect((globalMessages[0] as Record<string, unknown>).content).toBe('global msg');
+        expect((teamMessages[0] as Record<string, unknown>).content).toBe('team msg');
 
         commsPubSub.removeAllListeners('comms:global');
         commsPubSub.removeAllListeners('comms:team-1');
