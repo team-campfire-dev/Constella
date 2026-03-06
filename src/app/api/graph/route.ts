@@ -174,6 +174,64 @@ export async function GET(req: NextRequest) {
                 names: Array.from(nodesMap.values()).map((n: any) => n.name)
             });
 
+            // 3. Overlay: Merge another user's discoveries
+            const overlayUserIds = searchParams.get('overlayUserIds');
+            if (overlayUserIds) {
+                const overlayIds = overlayUserIds.split(',').filter(Boolean);
+
+                for (const overlayUserId of overlayIds) {
+                    const overlayLogs = await prismaContent.shipLog.findMany({
+                        where: { userId: overlayUserId },
+                        include: {
+                            topic: {
+                                include: {
+                                    articles: {
+                                        where: { language: lang },
+                                        select: { title: true }
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    const overlayNames = overlayLogs.map(l => l.topic.name);
+                    const overlayNamesSet = new Set(overlayNames);
+
+                    // Mark existing nodes as 'shared' if both users discovered them
+                    nodesMap.forEach((node) => {
+                        if (node.group === 'known' && overlayNamesSet.has(node.canonical)) {
+                            node.color = '#FFD700'; // Gold for shared discoveries
+                            node.group = 'shared';
+                        }
+                    });
+
+                    // Add overlay-only nodes (topics the overlay user discovered but the current user hasn't)
+                    for (const log of overlayLogs) {
+                        if (!discoveredNamesSet.has(log.topic.name)) {
+                            // Check if this node already exists as a mystery node
+                            let existingNode = null;
+                            nodesMap.forEach((node) => {
+                                if (node.canonical === log.topic.name) {
+                                    existingNode = node;
+                                }
+                            });
+
+                            if (existingNode) {
+                                // Convert mystery node to overlay
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                (existingNode as any).color = '#A855F7'; // Purple for overlay
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                (existingNode as any).group = 'overlay';
+                                const displayName = log.topic.articles[0]?.title || log.topic.name;
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                (existingNode as any).name = displayName;
+                            }
+                            // We don't add entirely new nodes that aren't connected to the graph
+                        }
+                    }
+                }
+            }
+
             return NextResponse.json({
                 nodes: Array.from(nodesMap.values()),
                 links

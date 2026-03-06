@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rate-limit";
 import commsPubSub from "@/lib/comms-pubsub";
+import { checkAndGrantAchievements } from "@/lib/achievements";
 
 const RATE_LIMIT_WINDOW_MS = 1000; // 1 second per request for chat messages
 
@@ -75,6 +76,9 @@ export async function POST(req: NextRequest) {
     } catch (error) {
         logger.error("Comms API Error", { error: error instanceof Error ? error.message : error });
         return NextResponse.json({ error: 'Failed to send message' }, { status: 500 });
+    } finally {
+        // 🏆 Fire-and-forget: check achievements after message send
+        checkAndGrantAchievements(userId).catch(() => { });
     }
 }
 

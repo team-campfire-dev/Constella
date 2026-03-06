@@ -37,7 +37,10 @@
         "editProfile": "Edit Profile",
         "avatar": "Avatar",
         "fullName": "Full name",
-        "email": "Email address"
+        "email": "Email address",
+        "bio": "Bio",
+        "noBio": "No bio set.",
+        "viewPublicProfile": "View Public Profile"
     },
     "ProfileEdit": {
         "title": "Profile",
@@ -45,7 +48,9 @@
         "save": "Save",
         "emailLabel": "Email",
         "emailHelp": "Email cannot be changed.",
-        "nameLabel": "Name"
+        "nameLabel": "Name",
+        "bioLabel": "Bio",
+        "bioHelp": "Write a short introduction about yourself for other explorers."
     },
     "StarMap": {
         "title": "Star Map",
@@ -53,12 +58,20 @@
         "menu": {
             "starMap": "Star Map",
             "shipLog": "Ship Log",
-            "commsConsole": "Comms Console"
+            "commsConsole": "Comms Console",
+            "feed": "Discovery Feed",
+            "dm": "Direct Signal",
+            "expeditions": "Expeditions",
+            "leaderboard": "Leaderboard"
         },
         "search": "Search Constellation...",
         "discovering": "Discovering...",
         "inputPlaceholder": "Enter query for AI Console...",
         "signalTransmission": "Transmitting signal...",
+        "crewOverlay": "Crew Overlay",
+        "legendMine": "My Discoveries",
+        "legendOverlay": "Crew Discoveries",
+        "legendShared": "Shared Discoveries",
         "zoomIn": "Zoom In",
         "zoomOut": "Zoom Out",
         "resetZoom": "Reset Zoom",
@@ -73,7 +86,11 @@
         "archiveId": "ARCHIVE_ID",
         "lastUpdate": "LAST_UPDATE",
         "close": "Close panel",
-        "closePanel": "Close Panel"
+        "closePanel": "Close Panel",
+        "firstDiscoverer": "First discovered by {name}",
+        "noDiscoverer": "No discovery records",
+        "explorers": "{count} explorers have charted this star",
+        "discuss": "Discuss this topic"
     },
     "ShipLog": {
         "title": "Ship Log",
@@ -96,6 +113,87 @@
         "commsReconnecting": "RECONNECTING...",
         "commsDisconnected": "DISCONNECTED",
         "noSignals": "No signals detected.",
-        "newMessages": "New Messages"
+        "newMessages": "New Messages",
+        "channelGlobal": "Global Comms",
+        "channelTopic": "Topic Channel",
+        "broadcastPlaceholder": "Broadcast message..."
+    },
+    "Explorer": {
+        "title": "Explorer Profile",
+        "joined": "Joined",
+        "bio": "Bio",
+        "noBio": "This explorer hasn't written a bio yet.",
+        "statsTitle": "Exploration Record",
+        "totalDiscoveries": "Stars Discovered",
+        "firstDiscoveries": "First Discoveries",
+        "recentTopics": "Recent Discoveries",
+        "noTopics": "No discoveries recorded yet.",
+        "notFound": "Explorer not found.",
+        "loading": "Loading explorer profile...",
+        "exploreThis": "Explore this topic",
+        "addCrew": "Add to Crew",
+        "removeCrew": "Remove from Crew",
+        "followers": "{count} crew members",
+        "followingCount": "Following {count}",
+        "achievements": "Achievements",
+        "sendSignal": "Direct Signal"
+    },
+    "Expedition": {
+        "title": "Expeditions",
+        "create": "New Expedition",
+        "newExpedition": "New Expedition",
+        "namePlaceholder": "Enter expedition name...",
+        "descPlaceholder": "Description (optional)",
+        "cancel": "Cancel",
+        "loading": "Loading...",
+        "noExpeditions": "No expeditions yet. Create one to start collaborating!",
+        "notFound": "Expedition not found.",
+        "status_active": "Active",
+        "status_completed": "Completed",
+        "status_archived": "Archived",
+        "complete": "Complete",
+        "members": "Members",
+        "inviteMember": "Invite Member",
+        "shareTopic": "Share Topic",
+        "commsChannel": "Comms Channel",
+        "selectCrew": "Select Crew",
+        "noCrew": "No crew members found.",
+        "selectTopic": "Select Topic",
+        "sharedDiscoveries": "Shared Discoveries",
+        "noSharedTopics": "No topics shared yet."
+    },
+    "Feed": {
+        "title": "Discovery Feed",
+        "allExplorers": "All Explorers",
+        "myCrew": "My Crew",
+        "noActivity": "No discoveries reported yet.",
+        "discovered": "discovered",
+        "ago": "ago",
+        "loading": "Loading feed..."
+    },
+    "Leaderboard": {
+        "title": "Explorer Leaderboard",
+        "myAchievements": "My Achievements",
+        "noAchievements": "No achievements unlocked yet.",
+        "sortDiscoveries": "Discoveries",
+        "sortFirstDiscoveries": "First Discoveries",
+        "sortAchievements": "Achievements",
+        "discoveries": "Disc.",
+        "firsts": "Firsts",
+        "badges": "Badges",
+        "loading": "Loading...",
+        "noData": "No explorers found.",
+        "loadMore": "Load More",
+        "nextGoal": "Next goal"
+    },
+    "DM": {
+        "title": "Direct Signal",
+        "loading": "Loading...",
+        "noConversations": "No conversations yet.",
+        "selectConversation": "Select a conversation",
+        "startConversation": "Send your first message!",
+        "inputPlaceholder": "Type a message...",
+        "send": "Send",
+        "sendSignal": "Send Direct Signal"
     }
 }

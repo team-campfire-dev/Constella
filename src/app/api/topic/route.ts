@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
+import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
 import { processUserQuery } from "@/lib/wiki-engine";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -58,12 +59,27 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Topic not found' }, { status: 404 });
         }
 
-        // Verify Access (ShipLog)
-        const canAccess = await prismaContent.shipLog.findUnique({
+        // Verify Access: Personal ShipLog OR Expedition membership
+        const personalAccess = await prismaContent.shipLog.findUnique({
             where: {
                 userId_topicId: { userId, topicId: topic.id }
             }
         });
+
+        // If no personal access, check expedition shared logs
+        let canAccess = !!personalAccess;
+        if (!canAccess) {
+            const expeditionAccess = await prismaContent.expeditionShipLog.findFirst({
+                where: {
+                    topicId: topic.id,
+                    expedition: {
+                        status: 'active',
+                        members: { some: { userId } }
+                    }
+                }
+            });
+            canAccess = !!expeditionAccess;
+        }
 
         if (!canAccess) {
             // Return simplified response for undiscovered topics (so frontend knows it exists but is locked)
@@ -98,6 +114,32 @@ export async function GET(req: Request) {
             }
         }
 
+        // 3. Fetch Discovery Stats (First Discoverer + Total Explorers)
+        const [firstDiscoveryLog, totalExplorers] = await Promise.all([
+            prismaContent.shipLog.findFirst({
+                where: { topicId: topic.id },
+                orderBy: { discoveredAt: 'asc' },
+                select: { userId: true, discoveredAt: true }
+            }),
+            prismaContent.shipLog.count({
+                where: { topicId: topic.id }
+            })
+        ]);
+
+        let firstDiscoverer = null;
+        if (firstDiscoveryLog) {
+            const discovererUser = await prisma.user.findUnique({
+                where: { id: firstDiscoveryLog.userId },
+                select: { name: true, image: true }
+            });
+            firstDiscoverer = {
+                id: firstDiscoveryLog.userId,
+                name: discovererUser?.name || 'Unknown Explorer',
+                image: discovererUser?.image || null,
+                discoveredAt: firstDiscoveryLog.discoveredAt
+            };
+        }
+
         return NextResponse.json({
             success: true,
             data: {
@@ -106,7 +148,11 @@ export async function GET(req: Request) {
                 content: article?.content || "Data corrupted. Translation failed.",
                 language: article?.language || lang,
                 updatedAt: article?.updatedAt || new Date(),
-                tags: topic.tags.map(t => t.name)
+                tags: topic.tags.map(t => t.name),
+                discoveryStats: {
+                    firstDiscoverer,
+                    totalExplorers
+                }
             }
         });
     } catch (error) {

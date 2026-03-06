@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import clsx from 'clsx';
 // import UserAvatar from '@/components/UserAvatar';
 import React from 'react';
+import { Link } from '@/i18n/navigation';
 
 interface Message {
     id: string;
@@ -61,17 +62,24 @@ const ChatMessageItem = React.memo(({ msg, markdownComponents, t }: { msg: Messa
 ChatMessageItem.displayName = 'ChatMessageItem';
 
 // Memoized Comms Message Item
-const CommsMessageItem = React.memo(({ msg }: { msg: CommsMessage }) => (
-    <div className="flex flex-col gap-1 mb-4">
-        <div className="flex items-center gap-2 text-xs text-cyan-600">
-            <span className="font-bold text-cyan-400">{msg.user.name}</span>
-            <span className="opacity-50">{msg.timestamp.toLocaleTimeString()}</span>
+const CommsMessageItem = React.memo(({ msg }: { msg: CommsMessage }) => {
+    return (
+        <div className="flex flex-col gap-1 mb-4">
+            <div className="flex items-center gap-2 text-xs text-cyan-600">
+                <Link
+                    href={`/explorer/${msg.user.id}`}
+                    className="font-bold text-cyan-400 hover:text-cyan-200 transition-colors"
+                >
+                    {msg.user.name}
+                </Link>
+                <span className="opacity-50">{msg.timestamp.toLocaleTimeString()}</span>
+            </div>
+            <div className="bg-slate-900/40 border border-cyan-900/30 rounded p-3 text-cyan-100 text-sm">
+                {msg.content}
+            </div>
         </div>
-        <div className="bg-slate-900/40 border border-cyan-900/30 rounded p-3 text-cyan-100 text-sm">
-            {msg.content}
-        </div>
-    </div>
-));
+    );
+});
 CommsMessageItem.displayName = 'CommsMessageItem';
 
 export default function ConsolePage() {
@@ -81,7 +89,12 @@ export default function ConsolePage() {
     const searchParams = useSearchParams();
     const initialQuery = searchParams.get('q');
 
-    const [activeTab, setActiveTab] = useState<'ai' | 'comms'>('ai');
+    // Read channel and tab from URL params (from KnowledgePanel "Discuss" button)
+    const initialChannel = searchParams.get('channel') || 'global';
+    const initialTab = searchParams.get('tab') as 'ai' | 'comms' | null;
+
+    const [activeTab, setActiveTab] = useState<'ai' | 'comms'>(initialTab || 'ai');
+    const [commsChannel, setCommsChannel] = useState(initialChannel);
 
     // AI Chat State
     const [input, setInput] = useState('');
@@ -93,6 +106,30 @@ export default function ConsolePage() {
     const [isCommsLoading, setIsCommsLoading] = useState(false);
     const [commsStatus, setCommsStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('disconnected');
     const [hasNewMessages, setHasNewMessages] = useState(false);
+    const [topicName, setTopicName] = useState<string | null>(null);
+
+    // Fetch topic name when channel is a topic channel
+    useEffect(() => {
+        if (commsChannel.startsWith('topic:')) {
+            const topicId = commsChannel.replace('topic:', '');
+            setTopicName(null); // reset while loading
+            fetch(`/api/topic?id=${encodeURIComponent(topicId)}&lang=${locale}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.data?.name) {
+                        setTopicName(data.data.name);
+                    }
+                })
+                .catch(() => { /* topic name fetch failed, fallback will be used */ });
+        } else {
+            setTopicName(null);
+        }
+    }, [commsChannel, locale]);
+
+    // Channel display name
+    const channelDisplayName = commsChannel === 'global'
+        ? t('channelGlobal')
+        : `${t('channelTopic')}: ${topicName || commsChannel.replace('topic:', '').slice(0, 8).toUpperCase()}`;
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -193,7 +230,7 @@ export default function ConsolePage() {
         const initComms = async () => {
             // 1. Load history via existing REST endpoint
             try {
-                const res = await fetch('/api/comms?channel=global');
+                const res = await fetch(`/api/comms?channel=${encodeURIComponent(commsChannel)}`);
                 const data = await res.json();
                 if (data.success) {
                     setCommsMessages(data.data.map((msg: { id: string; content: string; timestamp: string; user: { id: string; name: string; image?: string | null } }) => ({
@@ -206,7 +243,7 @@ export default function ConsolePage() {
             }
 
             // 2. Connect SSE stream for real-time updates
-            eventSource = new EventSource('/api/comms/stream?channel=global');
+            eventSource = new EventSource(`/api/comms/stream?channel=${encodeURIComponent(commsChannel)}`);
 
             eventSource.onopen = () => {
                 setCommsStatus('connected');
@@ -251,7 +288,7 @@ export default function ConsolePage() {
                 setCommsStatus('disconnected');
             }
         };
-    }, [activeTab, isNearBottom]);
+    }, [activeTab, isNearBottom, commsChannel]);
 
 
     const handleSendMessage = useCallback(async (text: string) => {
@@ -319,7 +356,7 @@ export default function ConsolePage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message: text,
-                        channel: 'global'
+                        channel: commsChannel
                     })
                 });
                 const data = await res.json();
@@ -335,7 +372,7 @@ export default function ConsolePage() {
                 setIsCommsLoading(false);
             }
         }
-    }, [activeTab, locale, t]);
+    }, [activeTab, locale, t, commsChannel]);
 
     // Handle link clicks from markdown
     const handleMarkdownLinkClick = useCallback((e: React.MouseEvent<HTMLSpanElement>, href?: string) => {
@@ -393,6 +430,21 @@ export default function ConsolePage() {
                                 Public Comms
                             </button>
                         </div>
+                        {/* Channel indicator (shown when on non-global channel) */}
+                        {activeTab === 'comms' && commsChannel !== 'global' && (
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-cyan-500 font-mono bg-cyan-900/30 px-2 py-1 rounded border border-cyan-700/50">
+                                    📡 {channelDisplayName}
+                                </span>
+                                <button
+                                    onClick={() => setCommsChannel('global')}
+                                    className="text-xs text-cyan-700 hover:text-cyan-400 transition-colors"
+                                    title={t('channelGlobal')}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        )}
                     </div>
                     <div className="flex gap-2 items-center text-xs text-cyan-700">
                         {activeTab === 'comms' ? (
@@ -495,7 +547,7 @@ export default function ConsolePage() {
                             type="text"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
-                            placeholder={activeTab === 'ai' ? t('inputPlaceholder') : "Broadcast message..."}
+                            placeholder={activeTab === 'ai' ? t('inputPlaceholder') : t('broadcastPlaceholder')}
                             className="flex-1 bg-transparent border-none outline-none text-cyan-100 placeholder-cyan-800 font-mono py-3"
                             autoFocus
                         />

@@ -5,6 +5,7 @@ import { processUserQuery } from "@/lib/wiki-engine";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { checkAndGrantAchievements } from "@/lib/achievements";
 
 const RATE_LIMIT_WINDOW_MS = 3000; // 3 seconds per request
 
@@ -68,6 +69,9 @@ export async function POST(req: Request) {
     } catch (error) {
         logger.error("Chat API Error", { error: error instanceof Error ? error.message : error });
         return NextResponse.json({ error: 'Failed to process query' }, { status: 500 });
+    } finally {
+        // 🏆 Fire-and-forget: check achievements after response
+        checkAndGrantAchievements(userId).catch(() => { });
     }
 }
 

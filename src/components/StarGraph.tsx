@@ -29,6 +29,7 @@ interface GraphData {
 
 interface StarGraphProps {
     onNodeClick?: (node: GraphNode) => void;
+    overlayUserIds?: string[];
 }
 
 // Internal Loading Component
@@ -54,7 +55,13 @@ const isMysteryLink = (link: any) => {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const getLinkColor = (link: any) => isMysteryLink(link) ? "#FFA500" : "#00F0FF33";
+const getLinkColor = (link: any) => {
+    const sourceGroup = link.source?.group || '';
+    const targetGroup = link.target?.group || '';
+    if (sourceGroup === 'overlay' || targetGroup === 'overlay') return '#A855F733';
+    if (sourceGroup === 'shared' || targetGroup === 'shared') return '#FFD70044';
+    return isMysteryLink(link) ? "#FFA500" : "#00F0FF33";
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getLinkLineDash = (link: any) => isMysteryLink(link) ? [5, 5] : null;
@@ -106,6 +113,60 @@ const handleNodeCanvasObject = (node: any, ctx: CanvasRenderingContext2D, global
         ctx.fillStyle = '#FFA500'; // Orange text
         ctx.fillText(label, x, y + r + fontSize + 2); // Position below
 
+    } else if (node.group === 'overlay') {
+        // Overlay Node Style: Purple glow, semi-transparent
+        if (Number.isFinite(r) && r > 0) {
+            try {
+                const gradient = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 1.5);
+                gradient.addColorStop(0, '#A855F7');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.globalAlpha = 0.6;
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI, false);
+                ctx.fill();
+                ctx.fillStyle = '#A855F7';
+                ctx.beginPath();
+                ctx.arc(x, y, r * 0.6, 0, 2 * Math.PI, false);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            } catch {
+                ctx.fillStyle = '#A855F7';
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, 2 * Math.PI, false);
+            }
+        }
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#A855F7';
+        ctx.fillText(label, x, y + r + fontSize);
+
+    } else if (node.group === 'shared') {
+        // Shared Node Style: Gold glow
+        if (Number.isFinite(r) && r > 0) {
+            try {
+                const gradient = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 1.5);
+                gradient.addColorStop(0, '#FFD700');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI, false);
+                ctx.fill();
+                ctx.fillStyle = '#FFD700';
+                ctx.beginPath();
+                ctx.arc(x, y, r * 0.6, 0, 2 * Math.PI, false);
+                ctx.fill();
+            } catch {
+                ctx.fillStyle = '#FFD700';
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, 2 * Math.PI, false);
+            }
+        }
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText(label, x, y + r + fontSize);
+
     } else {
         // Known Node Style: Solid Cyan Core, Glow
 
@@ -152,7 +213,7 @@ const paintNodePointerArea = (node: any, color: string, ctx: CanvasRenderingCont
     ctx.fill();
 };
 
-export default function StarGraph({ onNodeClick }: StarGraphProps) {
+export default function StarGraph({ onNodeClick, overlayUserIds }: StarGraphProps) {
     const locale = useLocale();
     const t = useTranslations('StarMap');
     const router = useRouter();
@@ -190,7 +251,10 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const res = await fetch(`/api/graph?lang=${locale}`);
+                const overlayParam = overlayUserIds?.length
+                    ? `&overlayUserIds=${overlayUserIds.join(',')}`
+                    : '';
+                const res = await fetch(`/api/graph?lang=${locale}${overlayParam}`);
                 if (!res.ok) throw new Error('Failed to fetch');
                 const graphData = await res.json();
 
@@ -212,7 +276,7 @@ export default function StarGraph({ onNodeClick }: StarGraphProps) {
         };
 
         fetchData();
-    }, [locale]);
+    }, [locale, overlayUserIds]);
 
     return (
         <div className="w-full h-full bg-black rounded-lg overflow-hidden relative border border-gray-800">

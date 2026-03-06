@@ -14,6 +14,7 @@ export async function updateProfile(formData: FormData) {
     }
 
     const name = formData.get("name") as string
+    const bio = formData.get("bio") as string | null
 
     // Simple validation
     if (!name || name.trim().length === 0) {
@@ -23,7 +24,7 @@ export async function updateProfile(formData: FormData) {
 
     await prisma.user.update({
         where: { email: session.user.email },
-        data: { name },
+        data: { name, bio: bio?.trim() || null },
     })
 
     revalidatePath("/profile")

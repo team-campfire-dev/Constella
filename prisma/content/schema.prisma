@@ -10,14 +10,15 @@ datasource db {
 }
 
 model Topic {
-  id        String       @id @default(cuid())
-  name      String       @unique // Normalized name (lowercase)
-  aliases   Alias[]
-  articles  WikiArticle[]
-  shipLogs  ShipLog[]
-  tags      Tag[]
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id             String              @id @default(cuid())
+  name           String              @unique // Normalized name (lowercase)
+  aliases        Alias[]
+  articles       WikiArticle[]
+  shipLogs       ShipLog[]
+  tags           Tag[]
+  expeditionLogs ExpeditionShipLog[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 }
 
 model Tag {
@@ -37,10 +38,26 @@ model Alias {
 
 
 model User {
-  id            String         @id
-  shipLogs      ShipLog[]
-  chatHistory   ChatHistory[]
-  commsMessages CommsMessage[]
+  id                      String               @id
+  shipLogs                ShipLog[]
+  chatHistory             ChatHistory[]
+  commsMessages           CommsMessage[]
+  following               Follow[]             @relation("UserFollowing")
+  followers               Follow[]             @relation("UserFollowers")
+  achievements            Achievement[]
+  ownedExpeditions        Expedition[]         @relation("ExpeditionOwner")
+  expeditionMemberships   ExpeditionMember[]
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
 }
 
 model ChatHistory {
@@ -83,4 +100,52 @@ model WikiArticle {
   updatedAt DateTime @updatedAt
   
   @@unique([topicId, language])
+}
+
+model Achievement {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       String   // 'first_contact', 'pioneer', 'constellation_maker', 'cartographer', 'social_butterfly', 'deep_diver'
+  tier       Int      @default(1) // 1=Bronze, 2=Silver, 3=Gold
+  unlockedAt DateTime @default(now())
+
+  @@unique([userId, type, tier])
+}
+
+model Expedition {
+  id          String              @id @default(cuid())
+  name        String
+  description String?             @db.Text
+  ownerId     String
+  owner       User                @relation("ExpeditionOwner", fields: [ownerId], references: [id])
+  status      String              @default("active") // 'active', 'completed', 'archived'
+  members     ExpeditionMember[]
+  sharedLogs  ExpeditionShipLog[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model ExpeditionMember {
+  id           String     @id @default(cuid())
+  expeditionId String
+  expedition   Expedition @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         String     @default("member") // 'owner', 'member'
+  joinedAt     DateTime   @default(now())
+
+  @@unique([expeditionId, userId])
+}
+
+model ExpeditionShipLog {
+  id           String     @id @default(cuid())
+  expeditionId String
+  expedition   Expedition @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  userId       String     // The member who added it
+  topicId      String
+  topic        Topic      @relation(fields: [topicId], references: [id])
+  discoveredAt DateTime   @default(now())
+
+  @@unique([expeditionId, topicId])
 }
