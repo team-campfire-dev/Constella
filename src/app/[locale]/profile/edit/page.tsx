@@ -3,6 +3,8 @@ import { authOptions } from "@/lib/auth"
 import { redirect } from "@/i18n/navigation"
 import ProfileEditForm from "@/components/ProfileEditForm"
 import { getTranslations } from "next-intl/server"
+import DashboardLayout from "@/components/DashboardLayout"
+import prisma from "@/lib/prisma"
 
 export default async function EditProfilePage() {
     const session = await getServerSession(authOptions)
@@ -10,28 +12,33 @@ export default async function EditProfilePage() {
 
     if (!session?.user) {
         redirect({ href: "/login", locale: "ko" });
-        return null; // Ensure function returns here
+        return null;
     }
 
+    // Fetch bio from DB (not in session)
+    const dbUser = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { bio: true }
+    });
+
     return (
-        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
-            <div className="md:grid md:grid-cols-3 md:gap-6">
-                <div className="md:col-span-1">
-                    <div className="px-4 sm:px-0">
-                        <h3 className="text-base font-semibold leading-6 text-gray-900">{t('title')}</h3>
-                        <p className="mt-1 text-sm text-gray-600">
-                            {t('description')}
-                        </p>
-                    </div>
+        <DashboardLayout>
+            <div className="p-6 max-w-3xl mx-auto">
+                {/* Header */}
+                <div className="mb-8">
+                    <h1 className="text-xl font-bold text-cyan-400 uppercase tracking-widest font-mono">
+                        {t('title')}
+                    </h1>
+                    <p className="mt-2 text-sm text-cyan-700">
+                        {t('description')}
+                    </p>
                 </div>
-                <div className="mt-5 md:col-span-2 md:mt-0">
-                    <div className="shadow sm:overflow-hidden sm:rounded-md">
-                        <div className="border-t border-gray-200 bg-white px-4 py-5 sm:p-6">
-                            <ProfileEditForm user={{ name: session.user.name, email: session.user.email }} />
-                        </div>
-                    </div>
+
+                {/* Form Card */}
+                <div className="bg-slate-900/50 border border-cyan-500/10 rounded-lg p-6">
+                    <ProfileEditForm user={{ name: session.user.name, email: session.user.email, bio: dbUser?.bio }} />
                 </div>
             </div>
-        </div>
+        </DashboardLayout>
     )
 }

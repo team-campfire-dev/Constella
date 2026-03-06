@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { Link, usePathname } from '@/i18n/navigation';
-import { Globe, FileText, Terminal } from 'lucide-react';
+import { Globe, FileText, Terminal, Rss, Trophy, MessageSquare, Rocket } from 'lucide-react';
 import clsx from 'clsx';
 
 
@@ -14,6 +14,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { name: t('shipLog'), href: '/ship-log', icon: FileText },
         { name: t('starMap'), href: '/', icon: Globe },
         { name: t('commsConsole'), href: '/console', icon: Terminal },
+        { name: t('feed'), href: '/feed', icon: Rss },
+        { name: t('dm'), href: '/dm', icon: MessageSquare },
+        { name: t('expeditions'), href: '/expeditions', icon: Rocket },
+        { name: t('leaderboard'), href: '/leaderboard', icon: Trophy },
     ];
 
     return (

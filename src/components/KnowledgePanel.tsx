@@ -3,12 +3,22 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useLocale, useTranslations } from 'next-intl';
-import { useRouter } from '@/i18n/navigation';
+import { useRouter, Link } from '@/i18n/navigation';
 
 interface KnowledgePanelProps {
     topicId: string | null;
     onClose: () => void;
     onNavigate?: (topicId: string) => void;
+}
+
+interface DiscoveryStats {
+    firstDiscoverer: {
+        id: string;
+        name: string;
+        image: string | null;
+        discoveredAt: string;
+    } | null;
+    totalExplorers: number;
 }
 
 interface TopicDetail {
@@ -18,6 +28,7 @@ interface TopicDetail {
     language: string;
     updatedAt: string;
     tags: string[];
+    discoveryStats?: DiscoveryStats;
 }
 
 export default function KnowledgePanel({ topicId, onClose, onNavigate }: KnowledgePanelProps) {
@@ -169,6 +180,38 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
                         {/* Article */}
                         <div className="prose prose-invert prose-p:text-slate-300 prose-headings:text-cyan-100 prose-a:text-cyan-400 prose-strong:text-cyan-200 text-sm leading-relaxed tracking-wide">
                             {renderContent(data.content)}
+                        </div>
+
+                        {/* Discovery Credits */}
+                        {data.discoveryStats && (
+                            <div className="pt-4 border-t border-cyan-900/30">
+                                <div className="flex items-center gap-2 text-sm">
+                                    <span className="text-yellow-400">⭐</span>
+                                    {data.discoveryStats.firstDiscoverer ? (
+                                        <Link
+                                            href={`/explorer/${data.discoveryStats.firstDiscoverer.id}`}
+                                            className="text-cyan-300 hover:text-cyan-100 transition-colors"
+                                        >
+                                            {t('firstDiscoverer', { name: data.discoveryStats.firstDiscoverer.name })}
+                                        </Link>
+                                    ) : (
+                                        <span className="text-cyan-600">{t('noDiscoverer')}</span>
+                                    )}
+                                </div>
+                                <div className="text-xs text-cyan-600 mt-1 ml-6">
+                                    {t('explorers', { count: data.discoveryStats.totalExplorers })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Discuss Button */}
+                        <div className="pt-3">
+                            <Link
+                                href={`/console?channel=topic:${data.id}&tab=comms`}
+                                className="flex items-center justify-center gap-2 w-full py-2 px-4 bg-cyan-900/30 hover:bg-cyan-800/50 border border-cyan-500/30 rounded text-cyan-300 hover:text-cyan-100 text-sm font-mono uppercase tracking-wider transition-all"
+                            >
+                                <span>📡</span> {t('discuss')}
+                            </Link>
                         </div>
 
                         {/* Footer Info */}

@@ -1,74 +1,137 @@
-이 프로젝트는 [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app)으로 생성된 [Next.js](https://nextjs.org) 프로젝트입니다.
+# 🌌 Constella
 
-## 시작하기 (Getting Started)
+> **우주 탐사 테마의 AI 기반 지식 탐구 플랫폼**
 
-먼저, 개발 서버를 실행하세요:
+키워드를 입력하면 AI가 위키 콘텐츠를 생성하고, 탐사한 지식들이 **별자리 지도(Star Map)**로 시각화됩니다. 다른 탐험가들과 함께 지식의 우주를 항해하세요.
+
+---
+
+## ✨ 주요 기능
+
+### 🔭 AI 지식 탐사
+- **통신 콘솔**: Gemini AI에게 질문하면 위키 콘텐츠를 생성합니다
+- **별자리 지도**: D3.js 기반 인터랙티브 그래프로 탐사한 토픽들의 관계를 시각화
+- **항해 일지**: 발견한 토픽들의 탐사 기록
+- **자동 링크**: AI 응답 내 관련 토픽을 `[[키워드]]`로 연결
+
+### 👥 소셜 & 협업
+- **공개 프로필**: 다른 탐험가의 항해 기록 열람
+- **팔로우 시스템**: 크루원으로 추가하여 활동 추적
+- **발견 피드**: 팔로우한 탐험가의 최근 발견 확인
+- **직접 통신 (DM)**: SSE 실시간 1:1 메시지
+- **공개 통신 (Comms)**: 토픽별 실시간 채팅
+
+### 🚀 협동 탐사
+- **원정대 (Expedition)**: 팀 생성, 멤버 초대, 토픽 공유
+- **공유 접근 권한**: 원정대 멤버는 공유된 토픽에 접근 가능
+- **전용 통신 채널**: 원정대별 Comms 채널
+
+### 🏆 리더보드 & 업적
+- **탐험가 랭킹**: 발견 수, 최초 발견, 업적 기준 정렬
+- **6종 × 3티어 업적**: 토픽 발견, AI 대화, Comms 활동 등
+- **자동 부여**: 토픽 발견/메시지 전송 시 실시간 업적 체크
+
+---
+
+## 🛠️ 기술 스택
+
+| | 기술 |
+|---|---|
+| **Frontend** | Next.js 16, React 19, Tailwind CSS v4, D3.js |
+| **Backend** | Next.js API Routes, NextAuth v4 (JWT) |
+| **Database** | MySQL (Prisma ORM, 이중 클라이언트), Neo4j (지식 그래프) |
+| **AI** | Google Gemini 3 Flash Preview |
+| **실시간** | Server-Sent Events (SSE) |
+| **i18n** | next-intl v4 (한국어/영어) |
+
+---
+
+## 🚀 시작하기
+
+### 필수 요구사항
+- Node.js 20+
+- MySQL 8.0+
+- Neo4j Community Edition 5+
+- Google Cloud API Key (Gemini)
+
+### 환경 설정
 
 ```bash
-npm run dev
-# 또는
-yarn dev
-# 또는
-pnpm dev
-# 또는
-bun dev
-```
+# 의존성 설치
+npm install
 
-브라우저에서 [http://localhost:3000](http://localhost:3000)을 열어 결과를 확인하세요.
+# 환경변수 설정 (.env)
+cp .env.example .env
+# SSH_USER, SSH_HOST, DATABASE_URL, DATABASE_CONTENT_URL,
+# NEO4J_URI, GOOGLE_GENERATIVE_AI_API_KEY,
+# NEXTAUTH_SECRET, GOOGLE_CLIENT_ID 등 설정
 
-`app/page.tsx`를 수정하여 페이지 편집을 시작할 수 있습니다. 파일을 수정하면 페이지가 자동으로 업데이트됩니다.
-
-이 프로젝트는 [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts)를 사용하여 Vercel의 새로운 글꼴 제품군인 [Geist](https://vercel.com/font)를 자동으로 최적화하고 로드합니다.
-
-## 더 알아보기 (Learn More)
-
-Next.js에 대해 더 자세히 알아보려면 다음 리소스를 참조하세요:
-
-- [Next.js 문서](https://nextjs.org/docs) - Next.js의 기능과 API에 대해 알아보세요.
-- [Next.js 배우기](https://nextjs.org/learn) - 대화형 Next.js 튜토리얼입니다.
-
-[Next.js GitHub 저장소](https://github.com/vercel/next.js)를 확인하실 수 있습니다. 피드백과 기여는 언제나 환영합니다!
-
-## 테스팅 (Testing)
-
-### 로컬 테스트 계정
-
-개발 및 테스트 목적으로 로컬 테스트 계정이 시딩되어 있습니다. 이 계정은 `CredentialsProvider`가 활성화된 경우(특정 하드코딩된 자격 증명을 확인하도록 구성됨)에만 접근할 수 있습니다.
-
-**자격 증명 (Credentials):**
-- **이메일/사용자명:** `agent@test.local`
-- **비밀번호:** `constella-agent`
-
-### 데이터베이스 시딩
-
-사용자는 `prisma/seed.ts`를 통해 생성됩니다. 사용자를 다시 시딩하거나 존재 여부를 확인하려면 다음 명령어를 실행하세요:
-```bash
+# DB 초기화
+npx prisma db push
+npx prisma db push --schema=prisma/content/schema.prisma
 npx tsx prisma/seed.ts
+
+# 개발 서버 실행
+npm run dev
 ```
 
-## Vercel에 배포하기 (Deploy on Vercel)
+브라우저에서 [http://localhost:3000](http://localhost:3000)을 열어 접속하세요.
 
-Next.js 앱을 배포하는 가장 쉬운 방법은 Next.js 제작자가 만든 [Vercel 플랫폼](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme)을 사용하는 것입니다.
+### 테스트 계정
+- **이메일**: `agent@test.local`
+- **비밀번호**: `constella-agent`
 
-자세한 내용은 [Next.js 배포 문서](https://nextjs.org/docs/app/building-your-application/deploying)를 확인하세요.
+---
 
-## 배포 설정 (Deployment Configuration)
+## 📝 스크립트
 
-VM 또는 프로덕션 환경에 배포할 때는 `.env` 파일(또는 `docker-compose.yml`)에 환경 변수를 올바르게 설정해야 합니다.
+| 명령어 | 설명 |
+|---|---|
+| `npm run dev` | SSH 터널 + 개발 서버 |
+| `npm run build` | 프로덕션 빌드 |
+| `npm run lint` | ESLint 검사 |
+| `npm test` | 유닛 테스트 |
+| `npm run test:uat` | UAT (Playwright) |
 
-### 로그인 관련 중요 설정 (Critical Settings for Login)
+---
 
-- **`NEXTAUTH_URL`**: 애플리케이션의 공개 URL로 설정해야 합니다 (예: `https://your-domain.com` 또는 `http://your-vm-ip:3000`).
-  - 이 값을 `localhost`로 남겨두면, 사용자가 로그인 후 *자신의* 로컬 호스트로 리다이렉트되어 로그인이 실패하게 됩니다.
-- **`NEXTAUTH_SECRET`**: 세션 암호화를 위한 임의의 문자열로 설정하세요. `openssl rand -base64 32` 명령어로 생성할 수 있습니다.
+## 📂 프로젝트 구조
 
-### 데이터베이스 연결 (Docker에서 호스트로)
+```
+src/
+├── app/
+│   ├── api/          # 17개 API 라우트
+│   └── [locale]/     # 14개 페이지 (ko/en)
+├── components/       # UI 컴포넌트
+├── lib/              # 핵심 모듈 (wiki-engine, achievements, comms-pubsub 등)
+└── i18n/             # next-intl 설정
 
-데이터베이스가 호스트 머신(Docker 외부)에서 실행 중인 경우, `DATABASE_URL`에 `localhost`를 사용할 수 없습니다.
-- `host.docker.internal` (docker-compose에 설정된 경우) 또는 Docker 게이트웨이 IP (`172.17.0.1`)를 사용하세요.
-- 예시: `DATABASE_URL="mysql://user:pass@host.docker.internal:3306/db_name"`
+prisma/
+├── schema.prisma           # Main DB (사용자/인증)
+└── content/schema.prisma   # Content DB (토픽/위키/소셜/업적/원정대)
+```
 
-### Google OAuth
+> AI 에이전트 개발 가이드는 [AGENTS.md](./AGENTS.md)를 참조하세요.
 
-Google Cloud Console 자격 증명(Credentials)에서 올바른 리다이렉트 URI를 허용하는지 확인하세요:
-- **승인된 리다이렉트 URI**: `http://<YOUR_DOMAIN_OR_IP>:3000/api/auth/callback/google`
+---
+
+## 🚢 배포
+
+### 환경변수 (프로덕션)
+- `NEXTAUTH_URL`: 공개 URL (`https://your-domain.com`)
+- `NEXTAUTH_SECRET`: `openssl rand -base64 32`로 생성
+- Google OAuth 리다이렉트 URI: `https://<DOMAIN>/api/auth/callback/google`
+
+### Docker
+```bash
+docker build -t constella .
+docker run -p 3000:3000 --env-file .env constella
+```
+
+> Docker에서 호스트 DB 접근 시 `host.docker.internal` 또는 `172.17.0.1` 사용
+
+---
+
+## 📜 라이센스
+
+Private project — All rights reserved.

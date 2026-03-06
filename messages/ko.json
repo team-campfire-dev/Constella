@@ -37,7 +37,10 @@
         "editProfile": "프로필 수정",
         "avatar": "아바타",
         "fullName": "이름",
-        "email": "이메일 주소"
+        "email": "이메일 주소",
+        "bio": "소개",
+        "noBio": "소개가 없습니다.",
+        "viewPublicProfile": "공개 프로필 보기"
     },
     "ProfileEdit": {
         "title": "프로필",
@@ -45,7 +48,9 @@
         "save": "저장",
         "emailLabel": "이메일",
         "emailHelp": "이메일은 변경할 수 없습니다.",
-        "nameLabel": "이름"
+        "nameLabel": "이름",
+        "bioLabel": "소개",
+        "bioHelp": "다른 탐험가에게 보여줄 간단한 자기소개를 작성하세요."
     },
     "StarMap": {
         "title": "별자리 지도",
@@ -53,12 +58,20 @@
         "menu": {
             "starMap": "별자리 지도",
             "shipLog": "항해 일지",
-            "commsConsole": "통신 콘솔"
+            "commsConsole": "통신 콘솔",
+            "feed": "발견 피드",
+            "dm": "직접 통신",
+            "expeditions": "원정대",
+            "leaderboard": "리더보드"
         },
         "search": "별자리 검색...",
         "discovering": "새로운 지식 탐색 중...",
         "inputPlaceholder": "AI 통신 콘솔에 입력...",
         "signalTransmission": "신호 전송 중...",
+        "crewOverlay": "크루 오버레이",
+        "legendMine": "내 발견",
+        "legendOverlay": "크루 발견",
+        "legendShared": "공동 발견",
         "zoomIn": "확대",
         "zoomOut": "축소",
         "resetZoom": "화면 초기화",
@@ -73,7 +86,11 @@
         "archiveId": "아카이브_ID",
         "lastUpdate": "마지막_업데이트",
         "close": "패널 닫기",
-        "closePanel": "패널 닫기"
+        "closePanel": "패널 닫기",
+        "firstDiscoverer": "{name} 님이 최초 발견",
+        "noDiscoverer": "발견 기록 없음",
+        "explorers": "{count}명의 탐험가가 관측함",
+        "discuss": "이 토픽에 대해 토론하기"
     },
     "ShipLog": {
         "title": "항해 일지",
@@ -96,6 +113,87 @@
         "commsReconnecting": "재연결 중...",
         "commsDisconnected": "연결 끊김",
         "noSignals": "감지된 신호 없음.",
-        "newMessages": "새 메시지"
+        "newMessages": "새 메시지",
+        "channelGlobal": "글로벌 통신",
+        "channelTopic": "토픽 채널",
+        "broadcastPlaceholder": "메시지를 전송하세요..."
+    },
+    "Explorer": {
+        "title": "탐험가 프로필",
+        "joined": "합류일",
+        "bio": "소개",
+        "noBio": "아직 자기소개를 작성하지 않았습니다.",
+        "statsTitle": "탐사 기록",
+        "totalDiscoveries": "발견한 별",
+        "firstDiscoveries": "최초 발견",
+        "recentTopics": "최근 발견한 토픽",
+        "noTopics": "아직 발견한 토픽이 없습니다.",
+        "notFound": "탐험가를 찾을 수 없습니다.",
+        "loading": "탐험가 정보 로딩 중...",
+        "exploreThis": "이 토픽 탐사하기",
+        "addCrew": "크루 추가",
+        "removeCrew": "크루 해제",
+        "followers": "크루원 {count}명",
+        "followingCount": "팔로잉 {count}명",
+        "achievements": "업적",
+        "sendSignal": "직접 통신"
+    },
+    "Feed": {
+        "title": "발견 피드",
+        "allExplorers": "전체 탐험가",
+        "myCrew": "내 크루",
+        "noActivity": "아직 발견 소식이 없습니다.",
+        "discovered": "발견함",
+        "ago": "전",
+        "loading": "피드 로딩 중..."
+    },
+    "Leaderboard": {
+        "title": "탐험가 리더보드",
+        "myAchievements": "내 업적",
+        "noAchievements": "아직 획득한 업적이 없습니다.",
+        "sortDiscoveries": "발견 수",
+        "sortFirstDiscoveries": "최초 발견",
+        "sortAchievements": "업적",
+        "discoveries": "발견",
+        "firsts": "최초",
+        "badges": "배지",
+        "loading": "로딩 중...",
+        "noData": "탐험가가 없습니다.",
+        "loadMore": "더 보기",
+        "nextGoal": "다음 목표"
+    },
+    "DM": {
+        "title": "직접 통신",
+        "loading": "로딩 중...",
+        "noConversations": "아직 대화가 없습니다.",
+        "selectConversation": "대화를 선택하세요",
+        "startConversation": "첫 메시지를 보내보세요!",
+        "inputPlaceholder": "메시지를 입력하세요...",
+        "send": "전송",
+        "sendSignal": "직접 통신 보내기"
+    },
+    "Expedition": {
+        "title": "탐사 원정대",
+        "create": "원정대 생성",
+        "newExpedition": "새 원정대",
+        "namePlaceholder": "원정대 이름을 입력하세요...",
+        "descPlaceholder": "원정대 설명 (선택사항)",
+        "cancel": "취소",
+        "loading": "로딩 중...",
+        "noExpeditions": "참여 중인 원정대가 없습니다. 새 원정대를 만들어보세요!",
+        "notFound": "원정대를 찾을 수 없습니다.",
+        "status_active": "활동중",
+        "status_completed": "완료",
+        "status_archived": "보관",
+        "complete": "원정 완료",
+        "members": "멤버",
+        "inviteMember": "멤버 초대",
+        "shareTopic": "토픽 공유",
+        "commsChannel": "전용 통신",
+        "selectCrew": "크루 선택",
+        "noCrew": "크루가 없습니다.",
+        "selectTopic": "토픽 선택",
+        "sharedDiscoveries": "공유 발견",
+        "noSharedTopics": "아직 공유된 토픽이 없습니다."
     }
 }
