@@ -43,6 +43,7 @@
 | **AI** | Google Gemini 3 Flash Preview |
 | **실시간** | Server-Sent Events (SSE) |
 | **i18n** | next-intl v4 (한국어/영어) |
+| **테스트** | Vitest (단위 테스트), Playwright (UAT) |
 
 ---
 
@@ -90,7 +91,8 @@ npm run dev
 | `npm run dev` | SSH 터널 + 개발 서버 |
 | `npm run build` | 프로덕션 빌드 |
 | `npm run lint` | ESLint 검사 |
-| `npm test` | 유닛 테스트 |
+| `npm test` | Vitest 단위 테스트 실행 |
+| `npm run test:watch` | Vitest watch 모드 (파일 변경 시 자동 재실행) |
 | `npm run test:uat` | UAT (Playwright) |
 
 ---
@@ -103,7 +105,8 @@ src/
 │   ├── api/          # 17개 API 라우트
 │   └── [locale]/     # 14개 페이지 (ko/en)
 ├── components/       # UI 컴포넌트
-├── lib/              # 핵심 모듈 (wiki-engine, achievements, comms-pubsub 등)
+├── lib/              # 핵심 모듈 + *.test.ts 단위 테스트
+├── test/             # Vitest 전역 설정 (mock setup)
 └── i18n/             # next-intl 설정
 
 prisma/
