@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate && prisma generate --schema=prisma/content/schema.prisma",
-    "test": "node --test --experimental-strip-types --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"./tools/test-loader.mjs\", pathToFileURL(\"./\"));' src/lib/*.test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:uat": "node --experimental-strip-types tools/uat_login.ts"
   },
   "dependencies": {
@@ -44,6 +45,7 @@
     "playwright": "^1.58.2",
     "prisma": "^5.22.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.0.18"
   }
 }
