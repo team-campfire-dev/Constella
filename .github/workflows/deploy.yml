@@ -71,26 +71,10 @@ jobs:
           # Docker 컨테이너 재빌드 및 실행
           docker compose up -d --build
 
-          # DB 전체 초기화 (Main + Content + Neo4j)
-          echo "Resetting Databases..."
-          docker compose exec -T app npx prisma db push --force-reset --accept-data-loss
-          docker compose exec -T app npx prisma db push --force-reset --accept-data-loss --schema=prisma/content/schema.prisma
-          
-          # Neo4j 그래프 초기화
-          echo "Resetting Neo4j Graph..."
-          docker compose exec -T app node -e "
-            const neo4j = require('neo4j-driver');
-            const driver = neo4j.driver(
-              process.env.NEO4J_URI,
-              neo4j.auth.basic(process.env.NEO4J_USER, process.env.NEO4J_PASSWORD)
-            );
-            const session = driver.session();
-            session.run('MATCH (n) DETACH DELETE n')
-              .then(() => console.log('Neo4j cleared'))
-              .then(() => session.close())
-              .then(() => driver.close())
-              .catch(e => { console.error(e); process.exit(1); });
-          "
+          # DB 스키마 동기화 (Prisma Push)
+          echo "Syncing Database Schema..."
+          docker compose exec -T app npx prisma db push
+          docker compose exec -T app npx prisma db push --schema=prisma/content/schema.prisma
 
           # 불필요한 이미지 정리
           docker image prune -f
