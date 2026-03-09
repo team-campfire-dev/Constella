@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import commsPubSub, { CommsEvent } from '@/lib/comms-pubsub';
 import logger from '@/lib/logger';
+import prismaContent from '@/lib/prisma-content';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,23 @@ export async function GET(req: NextRequest) {
 
     const channel = req.nextUrl.searchParams.get('channel') || 'global';
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Authorize channel access
+    if (channel.startsWith('dm:')) {
+        if (!channel.includes(userId)) {
+            logger.warn(`Unauthorized SSE DM access attempt: user=${userId}, channel=${channel}`);
+            return new Response('Forbidden', { status: 403 });
+        }
+    } else if (channel.startsWith('expedition:')) {
+        const expeditionId = channel.replace('expedition:', '');
+        const membership = await prismaContent.expeditionMember.findUnique({
+            where: { expeditionId_userId: { expeditionId, userId } }
+        });
+        if (!membership) {
+            logger.warn(`Unauthorized SSE Expedition access attempt: user=${userId}, channel=${channel}`);
+            return new Response('Forbidden', { status: 403 });
+        }
+    }
 
     logger.info(`SSE client connected: user=${userId}, channel=${channel}`);
 
