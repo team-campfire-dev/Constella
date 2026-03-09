@@ -31,6 +31,23 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         }
 
+        // 🛡️ Sentinel: Authorize channel access
+        if (channel.startsWith('dm:')) {
+            if (!channel.includes(userId)) {
+                logger.warn(`Unauthorized Comms POST access attempt: user=${userId}, channel=${channel}`);
+                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
+        } else if (channel.startsWith('expedition:')) {
+            const expeditionId = channel.replace('expedition:', '');
+            const membership = await prismaContent.expeditionMember.findUnique({
+                where: { expeditionId_userId: { expeditionId, userId } }
+            });
+            if (!membership) {
+                logger.warn(`Unauthorized Comms POST access attempt: user=${userId}, channel=${channel}`);
+                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
+        }
+
         // 0. Ensure User exists in Content DB (Sync)
         // Just in case, though normally done elsewhere
         await prismaContent.user.upsert({
@@ -87,11 +104,29 @@ export async function GET(req: NextRequest) {
     if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    const userId = session.user.id;
 
     const { searchParams } = new URL(req.url);
     const channel = searchParams.get('channel') || 'global';
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
     const before = searchParams.get('before'); // ISO timestamp cursor for pagination
+
+    // 🛡️ Sentinel: Authorize channel access
+    if (channel.startsWith('dm:')) {
+        if (!channel.includes(userId)) {
+            logger.warn(`Unauthorized Comms GET access attempt: user=${userId}, channel=${channel}`);
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+    } else if (channel.startsWith('expedition:')) {
+        const expeditionId = channel.replace('expedition:', '');
+        const membership = await prismaContent.expeditionMember.findUnique({
+            where: { expeditionId_userId: { expeditionId, userId } }
+        });
+        if (!membership) {
+            logger.warn(`Unauthorized Comms GET access attempt: user=${userId}, channel=${channel}`);
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+    }
 
     try {
         // 1. Fetch messages from Content DB (with optional cursor pagination)
