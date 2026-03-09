@@ -67,7 +67,7 @@ export async function generateWikiContent(topic: string, language: string = 'en'
   2. **Keys**: 다음의 정확한 키(camelCase)를 사용하세요:
      - topic: 키워드 (명사).
      - title: 현지화된 이름 (${language === 'ko' ? '한국어' : 'English'}).
-     - canonicalName: 공식 영문명 (Full Name).
+     - canonicalName: 공식 영문명 (Full Name). **반드시 해당 개념의 가장 널리 사용되는 공식 영어 명칭을 사용하세요. Wikipedia 표제어를 기준으로 삼으세요.** 예: "양자역학", "quantum physics", "quantum theory"는 모두 canonicalName = "Quantum Mechanics"로 통일해야 합니다.
      - tags: 문자열 배열 (카테고리).
      - content: 위키 아티클 내용 (Markdown, 객관적, [[links]] 포함).
      - chatResponse: 대화형 답변 (Markdown, [[links]] 포함).

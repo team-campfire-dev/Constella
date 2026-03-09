@@ -55,6 +55,7 @@ vi.mock('@/lib/prisma-content', () => ({
             findFirst: vi.fn(),
             create: vi.fn(),
             count: vi.fn(),
+            upsert: vi.fn(),
         },
         chatHistory: {
             create: vi.fn(),
@@ -76,6 +77,14 @@ vi.mock('@/lib/prisma-content', () => ({
             delete: vi.fn(),
         },
         user: {
+            upsert: vi.fn(),
+        },
+        alias: {
+            findUnique: vi.fn(),
+            findMany: vi.fn(),
+            upsert: vi.fn(),
+        },
+        wikiArticle: {
             upsert: vi.fn(),
         },
         $transaction: vi.fn(),

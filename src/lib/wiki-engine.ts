@@ -126,14 +126,45 @@ export async function processUserQuery(userId: string, query: string, language: 
         include: { articles: { where: { language } } }
     });
 
-    // 이름으로 찾지 못한 경우 별칭 테이블 검색
+    // 이름으로 찾지 못한 경우 별칭 테이블 검색 (case-insensitive)
     if (!topic) {
         const alias = await prismaContent.alias.findUnique({
-            where: { name: query.trim() },
+            where: { name: query.trim().toLowerCase() },
             include: { topic: { include: { articles: { where: { language } } } } }
         });
         if (alias) {
             topic = alias.topic;
+        }
+    }
+
+    // 1-2. Fuzzy 사전 조회 (Gemini 호출 전 유사 Topic 검색)
+    // 정확 일치가 실패한 경우, DB에서 유사한 주제를 검색하여 중복 생성 방지
+    if (!topic && normalizedName.length >= 3) {
+        const candidates = await prismaContent.topic.findMany({
+            where: {
+                OR: [
+                    { name: { contains: normalizedName } },
+                    { name: { startsWith: normalizedName.substring(0, Math.min(normalizedName.length, 10)) } },
+                ]
+            },
+            include: { articles: { where: { language } }, aliases: true },
+            take: 5,
+        });
+
+        if (candidates.length > 0) {
+            topic = candidates[0];
+        } else {
+            // 별칭에서도 fuzzy 검색
+            const aliasCandidates = await prismaContent.alias.findMany({
+                where: {
+                    name: { contains: normalizedName },
+                },
+                include: { topic: { include: { articles: { where: { language } } } } },
+                take: 5,
+            });
+            if (aliasCandidates.length > 0) {
+                topic = aliasCandidates[0].topic;
+            }
         }
     }
 
@@ -181,6 +212,50 @@ export async function processUserQuery(userId: string, query: string, language: 
         const mainTopicName = canonicalName.trim().toLowerCase(); // DB 키
         const extractedTopicName = generated.topic.trim(); // 원래 추출된 주제
         const tags = generated.tags || [];
+
+        // Post-Generation 중복 검사: Gemini가 반환한 canonicalName으로 기존 Topic 확인
+        const existingByCanonical = await prismaContent.topic.findUnique({
+            where: { name: mainTopicName },
+            include: { articles: { where: { language } } }
+        });
+
+        if (existingByCanonical?.articles?.[0]?.content &&
+            existingByCanonical.articles[0].updatedAt >= threeMonthsAgo) {
+            // 기존 캐시 사용, 별칭만 추가 등록
+            content = existingByCanonical.articles[0].content;
+            answer = `**[ARCHIVE RETRIEVED]**\n\n기록 보관소에서 *"${existingByCanonical.name}"*에 대한 데이터를 찾았습니다.\n\n---\n\n${content}`;
+            topicId = existingByCanonical.id;
+
+            // 별칭 등록 (user query -> existing topic)
+            if (normalizedName !== mainTopicName) {
+                try {
+                    await prismaContent.alias.upsert({
+                        where: { name: normalizedName },
+                        update: {},
+                        create: { name: normalizedName, topicId: existingByCanonical.id }
+                    });
+                    KeywordCache.invalidate();
+                } catch { /* 중복 무시 */ }
+            }
+
+            // ShipLog 업데이트
+            try {
+                await prismaContent.user.upsert({
+                    where: { id: userId },
+                    update: {},
+                    create: { id: userId }
+                });
+                await prismaContent.shipLog.upsert({
+                    where: { userId_topicId: { userId, topicId: topicId! } },
+                    update: { discoveredAt: new Date() },
+                    create: { userId, topicId: topicId!, discoveredAt: new Date() }
+                });
+            } catch (e) {
+                logger.error("[WikiEngine] ShipLog 업데이트 실패:", { error: e instanceof Error ? e.message : e });
+            }
+
+            return { answer, content, isNew: false, topicId };
+        }
 
         // 3-1. 자동 링크 생성기 (후처리)
         const { processedKeywords, nameMap: cachedNameMap } = await KeywordCache.getKeywordsData();
@@ -264,14 +339,14 @@ export async function processUserQuery(userId: string, query: string, language: 
                 create: { topicId: t.id, content, language, title: generated.title || extractedTopicName }
             });
 
-            // C. 별칭(Alias) 등록
+            // C. 별칭(Alias) 등록 (일관되게 lowercase로 저장)
             // 1) 사용자가 입력한 쿼리 (검색어) -> 주제
             if (query.trim().toLowerCase() !== mainTopicName) {
                 try {
                     await prismaTx.alias.upsert({
-                        where: { name: query.trim() },
+                        where: { name: query.trim().toLowerCase() },
                         update: {},
-                        create: { name: query.trim(), topicId: t.id }
+                        create: { name: query.trim().toLowerCase(), topicId: t.id }
                     });
                 } catch {
                     // 무시 (중복 등)
@@ -282,9 +357,9 @@ export async function processUserQuery(userId: string, query: string, language: 
             if (extractedTopicName.toLowerCase() !== mainTopicName) {
                 try {
                     await prismaTx.alias.upsert({
-                        where: { name: extractedTopicName },
+                        where: { name: extractedTopicName.toLowerCase() },
                         update: {},
-                        create: { name: extractedTopicName, topicId: t.id }
+                        create: { name: extractedTopicName.toLowerCase(), topicId: t.id }
                     });
                 } catch {
                     // 무시
