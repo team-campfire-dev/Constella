@@ -132,99 +132,117 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
         );
     };
 
+    // ESC key to close panel
+    useEffect(() => {
+        if (!topicId) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [topicId, onClose]);
+
     if (!topicId) return null;
 
     return (
-        <div className="fixed inset-y-0 right-0 w-96 bg-black/80 backdrop-blur-xl border-l border-cyan-500/30 text-cyan-50 z-50 transform transition-transform duration-300 ease-in-out shadow-[0_0_30px_rgba(0,240,255,0.1)] flex flex-col">
-            {/* Header */}
-            <div className="p-4 border-b border-cyan-900/50 flex justify-between items-center bg-cyan-950/20">
-                <h2 className="text-lg font-bold tracking-widest text-cyan-400 uppercase truncate pr-4">
-                    {loading ? t('decrypting') : data?.name || t('unknownArtifact')}
-                </h2>
-                <button
-                    onClick={onClose}
-                    aria-label={t('closePanel')}
-                    title={t('closePanel')}
-                    className="p-1 hover:bg-cyan-900/50 rounded text-cyan-500 hover:text-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
+        <>
+            {/* Backdrop for click-to-close */}
+            <div
+                className="fixed inset-0 z-40"
+                onClick={onClose}
+                aria-hidden="true"
+            />
+            <div className="fixed inset-y-0 right-0 w-96 bg-black/80 backdrop-blur-xl border-l border-cyan-500/30 text-cyan-50 z-50 transform transition-transform duration-300 ease-in-out shadow-[0_0_30px_rgba(0,240,255,0.1)] flex flex-col">
+                {/* Header */}
+                <div className="p-4 border-b border-cyan-900/50 flex justify-between items-center bg-cyan-950/20">
+                    <h2 className="text-lg font-bold tracking-widest text-cyan-400 uppercase truncate pr-4">
+                        {loading ? t('decrypting') : data?.name || t('unknownArtifact')}
+                    </h2>
+                    <button
+                        onClick={onClose}
+                        aria-label={t('closePanel')}
+                        title={t('closePanel')}
+                        className="p-1 hover:bg-cyan-900/50 rounded text-cyan-500 hover:text-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                {loading ? (
-                    <div className="flex flex-col items-center justify-center h-40 space-y-4 text-cyan-500/50">
-                        <span className="animate-spin text-2xl">⟳</span>
-                        <span className="text-xs uppercase tracking-widest">{t('accessing')}</span>
-                    </div>
-                ) : error ? (
-                    <div className="text-red-400 text-center p-4 border border-red-500/30 bg-red-900/10 rounded">
-                        {error === "Access Denied. Encrypted Signal." ? t('accessDenied') : error === "Signal Lost. Knowledge corrupted." ? t('signalLost') : error}
-                    </div>
-                ) : data ? (
-                    <div className="space-y-6">
-                        {/* Tags */}
-                        {data.tags && data.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-2 animate-fade-in">
-                                {data.tags.map(tag => (
-                                    <span key={tag} className="px-2 py-1 text-xs font-medium uppercase tracking-wider text-cyan-300 bg-cyan-900/30 border border-cyan-500/30 rounded-sm">
-                                        #{tag}
-                                    </span>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Article */}
-                        <div className="prose prose-invert prose-p:text-slate-300 prose-headings:text-cyan-100 prose-a:text-cyan-400 prose-strong:text-cyan-200 text-sm leading-relaxed tracking-wide">
-                            {renderContent(data.content)}
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center h-40 space-y-4 text-cyan-500/50">
+                            <span className="animate-spin text-2xl">⟳</span>
+                            <span className="text-xs uppercase tracking-widest">{t('accessing')}</span>
                         </div>
-
-                        {/* Discovery Credits */}
-                        {data.discoveryStats && (
-                            <div className="pt-4 border-t border-cyan-900/30">
-                                <div className="flex items-center gap-2 text-sm">
-                                    <span className="text-yellow-400">⭐</span>
-                                    {data.discoveryStats.firstDiscoverer ? (
-                                        <Link
-                                            href={`/explorer/${data.discoveryStats.firstDiscoverer.id}`}
-                                            className="text-cyan-300 hover:text-cyan-100 transition-colors"
-                                        >
-                                            {t('firstDiscoverer', { name: data.discoveryStats.firstDiscoverer.name })}
-                                        </Link>
-                                    ) : (
-                                        <span className="text-cyan-600">{t('noDiscoverer')}</span>
-                                    )}
+                    ) : error ? (
+                        <div className="text-red-400 text-center p-4 border border-red-500/30 bg-red-900/10 rounded">
+                            {error === "Access Denied. Encrypted Signal." ? t('accessDenied') : error === "Signal Lost. Knowledge corrupted." ? t('signalLost') : error}
+                        </div>
+                    ) : data ? (
+                        <div className="space-y-6">
+                            {/* Tags */}
+                            {data.tags && data.tags.length > 0 && (
+                                <div className="flex flex-wrap gap-2 animate-fade-in">
+                                    {data.tags.map(tag => (
+                                        <span key={tag} className="px-2 py-1 text-xs font-medium uppercase tracking-wider text-cyan-300 bg-cyan-900/30 border border-cyan-500/30 rounded-sm">
+                                            #{tag}
+                                        </span>
+                                    ))}
                                 </div>
-                                <div className="text-xs text-cyan-600 mt-1 ml-6">
-                                    {t('explorers', { count: data.discoveryStats.totalExplorers })}
-                                </div>
+                            )}
+
+                            {/* Article */}
+                            <div className="prose prose-invert prose-p:text-slate-300 prose-headings:text-cyan-100 prose-a:text-cyan-400 prose-strong:text-cyan-200 text-sm leading-relaxed tracking-wide">
+                                {renderContent(data.content)}
                             </div>
-                        )}
 
-                        {/* Discuss Button */}
-                        <div className="pt-3">
-                            <Link
-                                href={`/console?channel=topic:${data.id}&tab=comms`}
-                                className="flex items-center justify-center gap-2 w-full py-2 px-4 bg-cyan-900/30 hover:bg-cyan-800/50 border border-cyan-500/30 rounded text-cyan-300 hover:text-cyan-100 text-sm font-mono uppercase tracking-wider transition-all"
-                            >
-                                <span>📡</span> {t('discuss')}
-                            </Link>
-                        </div>
+                            {/* Discovery Credits */}
+                            {data.discoveryStats && (
+                                <div className="pt-4 border-t border-cyan-900/30">
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <span className="text-yellow-400">⭐</span>
+                                        {data.discoveryStats.firstDiscoverer ? (
+                                            <Link
+                                                href={`/explorer/${data.discoveryStats.firstDiscoverer.id}`}
+                                                className="text-cyan-300 hover:text-cyan-100 transition-colors"
+                                            >
+                                                {t('firstDiscoverer', { name: data.discoveryStats.firstDiscoverer.name })}
+                                            </Link>
+                                        ) : (
+                                            <span className="text-cyan-600">{t('noDiscoverer')}</span>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-cyan-600 mt-1 ml-6">
+                                        {t('explorers', { count: data.discoveryStats.totalExplorers })}
+                                    </div>
+                                </div>
+                            )}
 
-                        {/* Footer Info */}
-                        <div className="pt-4 border-t border-cyan-900/30 text-xs text-cyan-700 font-mono">
-                            <div>{t('archiveId')}: {data.id.slice(0, 8).toUpperCase()}</div>
-                            <div>{t('lastUpdate')}: {new Date(data.updatedAt).toLocaleDateString()}</div>
+                            {/* Discuss Button */}
+                            <div className="pt-3">
+                                <Link
+                                    href={`/console?channel=topic:${data.id}&tab=comms`}
+                                    className="flex items-center justify-center gap-2 w-full py-2 px-4 bg-cyan-900/30 hover:bg-cyan-800/50 border border-cyan-500/30 rounded text-cyan-300 hover:text-cyan-100 text-sm font-mono uppercase tracking-wider transition-all"
+                                >
+                                    <span>📡</span> {t('discuss')}
+                                </Link>
+                            </div>
+
+                            {/* Footer Info */}
+                            <div className="pt-4 border-t border-cyan-900/30 text-xs text-cyan-700 font-mono">
+                                <div>{t('archiveId')}: {data.id.slice(0, 8).toUpperCase()}</div>
+                                <div>{t('lastUpdate')}: {new Date(data.updatedAt).toLocaleDateString()}</div>
+                            </div>
                         </div>
-                    </div>
-                ) : null}
+                    ) : null}
+                </div>
+
+                {/* Decorative Footer */}
+                <div className="h-2 bg-gradient-to-r from-cyan-900 via-cyan-500 to-cyan-900 opacity-50"></div>
             </div>
-
-            {/* Decorative Footer */}
-            <div className="h-2 bg-gradient-to-r from-cyan-900 via-cyan-500 to-cyan-900 opacity-50"></div>
-        </div>
+        </>
     );
 }

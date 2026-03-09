@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import StarGraph, { GraphNode } from '@/components/StarGraph';
+import StarGraph, { GraphNode, DiscoveryEvent } from '@/components/StarGraph';
 import KnowledgePanel from '@/components/KnowledgePanel';
-import { useRouter } from '@/i18n/navigation';
+import ChatPanel from '@/components/ChatPanel';
 import { useTranslations } from 'next-intl';
 
 interface CrewMember {
@@ -13,12 +13,14 @@ interface CrewMember {
 }
 
 export default function StarMapWrapper() {
-    const router = useRouter();
     const t = useTranslations('StarMap');
     const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
     const [crew, setCrew] = useState<CrewMember[]>([]);
     const [selectedOverlayIds, setSelectedOverlayIds] = useState<string[]>([]);
     const [showCrewPanel, setShowCrewPanel] = useState(false);
+    const [chatOpen, setChatOpen] = useState(false);
+    const [chatQuery, setChatQuery] = useState<string | null>(null);
+    const [lastDiscovery, setLastDiscovery] = useState<DiscoveryEvent | null>(null);
 
     // Fetch crew list
     useEffect(() => {
@@ -36,16 +38,34 @@ export default function StarMapWrapper() {
         fetchCrew();
     }, []);
 
-    const handleNodeClick = (node: GraphNode) => {
-        if (node.topicId) {
+    const handleNodeClick = useCallback((node: GraphNode) => {
+        if (node.group === 'mystery' || node.group === 'overlay') {
+            // Open ChatPanel, close KnowledgePanel
+            setSelectedTopicId(null);
+            setChatQuery(node.name);
+            setChatOpen(true);
+        } else if (node.topicId) {
+            // Open KnowledgePanel, close ChatPanel
+            setChatOpen(false);
+            setChatQuery(null);
             setSelectedTopicId(node.topicId);
-        } else if (node.group === 'mystery' || node.group === 'overlay') {
-            router.push(`/console?q=${encodeURIComponent(node.name)}`);
         } else if (node.group === 'known' && !node.topicId) {
             console.warn("Node missing topicId", node);
-            router.push(`/console?q=${encodeURIComponent(node.name)}`);
+            setSelectedTopicId(null);
+            setChatQuery(node.name);
+            setChatOpen(true);
         }
-    };
+    }, []);
+
+    const handleQueryAI = useCallback((query: string) => {
+        setSelectedTopicId(null);
+        setChatQuery(query);
+        setChatOpen(true);
+    }, []);
+
+    const handleTopicDiscovered = useCallback((topicId: string, topicName: string, isNew: boolean) => {
+        setLastDiscovery({ topicId, topicName, isNew });
+    }, []);
 
     const toggleOverlay = useCallback((userId: string) => {
         setSelectedOverlayIds(prev =>
@@ -57,11 +77,25 @@ export default function StarMapWrapper() {
 
     return (
         <div className="relative w-full h-full">
-            <StarGraph onNodeClick={handleNodeClick} overlayUserIds={selectedOverlayIds} />
+            <StarGraph
+                onNodeClick={handleNodeClick}
+                overlayUserIds={selectedOverlayIds}
+                selectedNodeId={selectedTopicId}
+                onQueryAI={handleQueryAI}
+                newDiscovery={lastDiscovery}
+            />
             <KnowledgePanel
                 topicId={selectedTopicId}
                 onClose={() => setSelectedTopicId(null)}
                 onNavigate={(topicId) => setSelectedTopicId(topicId)}
+            />
+
+            {/* AI Chat Panel */}
+            <ChatPanel
+                isOpen={chatOpen}
+                onClose={() => { setChatOpen(false); setChatQuery(null); }}
+                initialQuery={chatQuery}
+                onTopicDiscovered={handleTopicDiscovered}
             />
 
             {/* Crew Overlay Toggle */}
@@ -70,8 +104,8 @@ export default function StarMapWrapper() {
                     <button
                         onClick={() => setShowCrewPanel(!showCrewPanel)}
                         className={`px-3 py-2 rounded text-xs font-mono uppercase tracking-wider transition-all ${selectedOverlayIds.length > 0
-                                ? 'bg-purple-900/50 border border-purple-500/50 text-purple-300'
-                                : 'bg-black/60 border border-cyan-900/30 text-cyan-500 hover:text-cyan-300'
+                            ? 'bg-purple-900/50 border border-purple-500/50 text-purple-300'
+                            : 'bg-black/60 border border-cyan-900/30 text-cyan-500 hover:text-cyan-300'
                             }`}
                     >
                         👥 {t('crewOverlay')} {selectedOverlayIds.length > 0 && `(${selectedOverlayIds.length})`}
