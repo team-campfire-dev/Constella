@@ -79,7 +79,7 @@ export default function FeedPage() {
         <DashboardLayout>
             <div className="p-6 max-w-3xl mx-auto">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
                     <h1 className="text-xl font-bold text-cyan-400 uppercase tracking-widest font-mono">
                         {t('title')}
                     </h1>

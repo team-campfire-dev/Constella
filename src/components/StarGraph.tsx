@@ -584,7 +584,7 @@ export default function StarGraph({ onNodeClick, overlayUserIds, selectedNodeId,
             )}
 
             {/* Input overlay at bottom */}
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 w-1/2 max-w-lg z-20">
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 w-[90%] md:w-1/2 max-w-lg z-20">
                 <div className="relative">
                     <input
                         ref={inputRef}

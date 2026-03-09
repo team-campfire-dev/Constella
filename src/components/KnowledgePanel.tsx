@@ -152,7 +152,7 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
                 onClick={onClose}
                 aria-hidden="true"
             />
-            <div className="fixed inset-y-0 right-0 w-96 bg-black/80 backdrop-blur-xl border-l border-cyan-500/30 text-cyan-50 z-50 transform transition-transform duration-300 ease-in-out shadow-[0_0_30px_rgba(0,240,255,0.1)] flex flex-col">
+            <div className="fixed inset-y-0 right-0 w-full md:w-96 bg-black/80 backdrop-blur-xl border-l border-cyan-500/30 text-cyan-50 z-50 transform transition-transform duration-300 ease-in-out shadow-[0_0_30px_rgba(0,240,255,0.1)] flex flex-col">
                 {/* Header */}
                 <div className="p-4 border-b border-cyan-900/50 flex justify-between items-center bg-cyan-950/20">
                     <h2 className="text-lg font-bold tracking-widest text-cyan-400 uppercase truncate pr-4">

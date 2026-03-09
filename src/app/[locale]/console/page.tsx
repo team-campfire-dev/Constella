@@ -815,7 +815,7 @@ export default function ConsolePage() {
                                 <div className="flex items-center gap-2 min-w-0">
                                     <button
                                         onClick={() => setShowChannelSidebar(!showChannelSidebar)}
-                                        className="flex items-center gap-1.5 text-xs text-cyan-500 font-mono bg-cyan-900/30 px-2 py-1 rounded border border-cyan-700/50 hover:border-cyan-500/50 transition-colors truncate max-w-[200px]"
+                                        className="flex items-center gap-1.5 text-xs text-cyan-500 font-mono bg-cyan-900/30 px-2 py-1 rounded border border-cyan-700/50 hover:border-cyan-500/50 transition-colors truncate max-w-[120px] md:max-w-[200px]"
                                     >
                                         📡 <span className="truncate">{channelDisplayName}</span>
                                         <ChevronDown className="w-3 h-3 flex-shrink-0" />

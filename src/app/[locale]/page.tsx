@@ -15,7 +15,7 @@ export default async function Home() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 h-full flex flex-col">
+      <div className="p-3 md:p-6 h-full flex flex-col">
         <div className="mb-4">
           <h1 className="text-xl font-bold text-gray-100">{t('cardTitle')}</h1>
         </div>

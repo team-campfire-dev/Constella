@@ -48,8 +48,8 @@ export default function ShipLogPage() {
 
     return (
         <DashboardLayout>
-            <div className="p-8 h-full flex flex-col text-white relative">
-                <h1 className="text-3xl font-bold mb-6 text-cyan-400 font-mono uppercase tracking-widest border-b border-cyan-500/30 pb-4">
+            <div className="p-4 md:p-8 h-full flex flex-col text-white relative">
+                <h1 className="text-xl md:text-3xl font-bold mb-6 text-cyan-400 font-mono uppercase tracking-widest border-b border-cyan-500/30 pb-4">
                     {t('title')}
                 </h1>
 

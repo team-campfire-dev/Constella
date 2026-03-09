@@ -167,7 +167,7 @@ export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscov
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-y-0 right-0 w-96 bg-black/90 backdrop-blur-xl border-l border-cyan-500/20 z-50 flex flex-col shadow-[0_0_40px_rgba(0,240,255,0.08)] animate-in slide-in-from-right duration-300">
+        <div className="fixed inset-y-0 right-0 w-full md:w-96 bg-black/90 backdrop-blur-xl border-l border-cyan-500/20 z-50 flex flex-col shadow-[0_0_40px_rgba(0,240,255,0.08)] animate-in slide-in-from-right duration-300">
             {/* Header */}
             <div className="px-4 py-3 border-b border-cyan-900/40 flex justify-between items-center bg-cyan-950/10 flex-shrink-0">
                 <div className="flex items-center gap-2">
@@ -206,8 +206,8 @@ export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscov
                             )}
                         </div>
                         <div className={`max-w-[80%] rounded-lg px-3 py-2 border text-xs leading-relaxed ${msg.role === 'user'
-                                ? 'bg-cyan-900/20 border-cyan-500/20 text-cyan-100 rounded-tr-sm'
-                                : 'bg-slate-900/40 border-cyan-800/20 text-slate-300 rounded-tl-sm'
+                            ? 'bg-cyan-900/20 border-cyan-500/20 text-cyan-100 rounded-tr-sm'
+                            : 'bg-slate-900/40 border-cyan-800/20 text-slate-300 rounded-tl-sm'
                             }`}>
                             {msg.role === 'assistant' ? (
                                 <div className="prose prose-invert prose-p:my-0.5 prose-headings:text-cyan-400 prose-strong:text-cyan-300 text-xs">

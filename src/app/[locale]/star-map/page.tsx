@@ -43,7 +43,7 @@ export default function StarMapPage() {
 
     return (
         <DashboardLayout>
-            <div className="p-6 h-full flex flex-col relative w-full h-full">
+            <div className="p-3 md:p-6 h-full flex flex-col relative w-full h-full">
                 <div className="mb-4 flex items-center justify-between">
                     <h1 className="text-xl font-bold text-gray-100">{t('cardTitle')}</h1>
                     {/* Chat panel toggle */}

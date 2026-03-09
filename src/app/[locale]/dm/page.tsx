@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
+import clsx from 'clsx';
 import { useTranslations } from 'next-intl';
 import DashboardLayout from '@/components/DashboardLayout';
 import UserAvatar from '@/components/UserAvatar';
@@ -167,7 +168,11 @@ export default function DmPage() {
                 <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] opacity-20" />
 
                 {/* Left Sidebar: Conversation List */}
-                <div className="w-72 border-r border-cyan-900/30 bg-black/40 z-20 flex flex-col">
+                <div className={clsx(
+                    'border-r border-cyan-900/30 bg-black/40 z-20 flex flex-col',
+                    'w-full md:w-72',
+                    selectedPartner ? 'hidden md:flex' : 'flex'
+                )}>
                     <div className="p-4 border-b border-cyan-900/30">
                         <h2 className="text-sm font-bold text-cyan-500 uppercase tracking-widest">
                             📨 {t('title')}
@@ -184,8 +189,8 @@ export default function DmPage() {
                                     key={conv.channel}
                                     onClick={() => selectConversation(conv)}
                                     className={`w-full flex items-center gap-3 p-3 text-left transition-all hover:bg-cyan-900/20 ${selectedPartner === conv.partner.id
-                                            ? 'bg-cyan-900/30 border-l-2 border-cyan-500'
-                                            : 'border-l-2 border-transparent'
+                                        ? 'bg-cyan-900/30 border-l-2 border-cyan-500'
+                                        : 'border-l-2 border-transparent'
                                         }`}
                                 >
                                     <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border border-cyan-500/30">
@@ -202,11 +207,24 @@ export default function DmPage() {
                 </div>
 
                 {/* Right: Message Thread */}
-                <div className="flex-1 flex flex-col z-20">
+                <div className={clsx(
+                    'flex-1 flex flex-col z-20',
+                    selectedPartner ? 'flex' : 'hidden md:flex'
+                )}>
                     {selectedPartner ? (
                         <>
                             {/* Header */}
                             <div className="p-4 border-b border-cyan-900/30 bg-cyan-950/20 backdrop-blur-md flex items-center gap-3">
+                                {/* Mobile back button */}
+                                <button
+                                    onClick={() => { setSelectedPartner(null); setSelectedPartnerInfo(null); }}
+                                    className="md:hidden text-cyan-500 hover:text-cyan-300 transition-colors p-1 -ml-1"
+                                    aria-label="Back"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                                    </svg>
+                                </button>
                                 {selectedPartnerInfo && (
                                     <Link
                                         href={`/explorer/${selectedPartnerInfo.id}`}
