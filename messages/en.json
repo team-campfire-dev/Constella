@@ -116,7 +116,20 @@
         "newMessages": "New Messages",
         "channelGlobal": "Global Comms",
         "channelTopic": "Topic Channel",
-        "broadcastPlaceholder": "Broadcast message..."
+        "broadcastPlaceholder": "Broadcast message...",
+        "tabAI": "AI Uplink",
+        "tabComms": "Public Comms",
+        "channels": "Channels",
+        "searchPlaceholder": "Search messages...",
+        "noSearchResults": "No messages match your search.",
+        "commsWelcome": "This is a real-time communication hub for explorers. Send your first signal!",
+        "suggestQuantum": "What is Quantum Mechanics?",
+        "suggestSolarSystem": "Explore the Solar System",
+        "suggestBlackHole": "Secrets of Black Holes",
+        "suggestDNA": "The Structure of DNA",
+        "inputHint": "Enter to send · Shift+Enter for new line",
+        "loadingMore": "Loading...",
+        "loadOlder": "Load older messages"
     },
     "Explorer": {
         "title": "Explorer Profile",

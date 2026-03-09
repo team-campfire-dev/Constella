@@ -116,7 +116,20 @@
         "newMessages": "새 메시지",
         "channelGlobal": "글로벌 통신",
         "channelTopic": "토픽 채널",
-        "broadcastPlaceholder": "메시지를 전송하세요..."
+        "broadcastPlaceholder": "메시지를 전송하세요...",
+        "tabAI": "AI 업링크",
+        "tabComms": "공개 통신",
+        "channels": "채널",
+        "searchPlaceholder": "메시지 검색...",
+        "noSearchResults": "검색 결과가 없습니다.",
+        "commsWelcome": "이곳은 다른 탐험가들과 실시간으로 소통하는 공간입니다. 첫 번째 메시지를 보내보세요!",
+        "suggestQuantum": "양자역학이란?",
+        "suggestSolarSystem": "태양계 탐험",
+        "suggestBlackHole": "블랙홀의 비밀",
+        "suggestDNA": "DNA의 구조",
+        "inputHint": "Enter 전송 · Shift+Enter 줄바꿈",
+        "loadingMore": "불러오는 중...",
+        "loadOlder": "이전 메시지 불러오기"
     },
     "Explorer": {
         "title": "탐험가 프로필",

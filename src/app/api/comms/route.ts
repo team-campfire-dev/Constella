@@ -90,24 +90,30 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const channel = searchParams.get('channel') || 'global';
-    // Optional: cursor pagination or limit
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
+    const before = searchParams.get('before'); // ISO timestamp cursor for pagination
 
     try {
-        // 1. Fetch messages from Content DB
+        // 1. Fetch messages from Content DB (with optional cursor pagination)
         const messages = await prismaContent.commsMessage.findMany({
-            where: { channel },
-            orderBy: { createdAt: 'asc' },
-            take: 50 // Last 50 messages
+            where: before
+                ? { channel, createdAt: { lt: new Date(before) } }
+                : { channel },
+            orderBy: { createdAt: 'desc' }, // newest first for cursor pagination
+            take: limit,
         });
 
-        if (messages.length === 0) {
+        // Reverse to ascending order for display
+        const sorted = [...messages].reverse();
+
+        if (sorted.length === 0) {
             return NextResponse.json({ success: true, data: [] });
         }
 
-        // 2. Collect User IDs
-        const userIds = Array.from(new Set(messages.map(m => m.userId)));
+        // 3. Collect User IDs
+        const userIds = Array.from(new Set(sorted.map(m => m.userId))) as string[];
 
-        // 3. Fetch User Details from Main DB
+        // 4. Fetch User Details from Main DB
         const users = await prisma.user.findMany({
             where: { id: { in: userIds } },
             select: { id: true, name: true, image: true }
@@ -115,8 +121,8 @@ export async function GET(req: NextRequest) {
 
         const userMap = new Map(users.map(u => [u.id, u]));
 
-        // 4. Combine
-        const enrichedMessages = messages.map(msg => ({
+        // 5. Combine
+        const enrichedMessages = sorted.map(msg => ({
             id: msg.id,
             content: msg.content,
             timestamp: msg.createdAt,
