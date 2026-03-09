@@ -75,7 +75,18 @@
         "zoomIn": "확대",
         "zoomOut": "축소",
         "resetZoom": "화면 초기화",
-        "loading": "별자리 지도 로딩 중..."
+        "loading": "별자리 지도 로딩 중...",
+        "emptyTitle": "미지의 우주",
+        "emptyDescription": "아직 별자리 지도가 비어있습니다. AI와 대화하며 첫 번째 별을 발견해보세요!",
+        "emptyAction": "탐험 시작하기",
+        "searchPlaceholder": "별을 검색하거나 AI에게 질문...",
+        "tooltipMystery": "미탐험",
+        "tooltipKnown": "발견됨",
+        "tooltipOverlay": "크루 발견",
+        "tooltipShared": "공동 발견",
+        "tooltipClickMystery": "클릭하여 이 주제를 탐험하세요",
+        "tooltipClickKnown": "클릭하여 상세 보기",
+        "chatToggle": "AI 업링크"
     },
     "KnowledgePanel": {
         "decrypting": "해독 중...",

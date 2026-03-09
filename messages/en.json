@@ -75,7 +75,18 @@
         "zoomIn": "Zoom In",
         "zoomOut": "Zoom Out",
         "resetZoom": "Reset Zoom",
-        "loading": "Loading Star Map..."
+        "loading": "Loading Star Map...",
+        "emptyTitle": "Uncharted Space",
+        "emptyDescription": "Your constellation map is empty. Start exploring topics with the AI to discover your first star!",
+        "emptyAction": "Begin Exploration",
+        "searchPlaceholder": "Search stars or ask AI...",
+        "tooltipMystery": "Unexplored",
+        "tooltipKnown": "Discovered",
+        "tooltipOverlay": "Crew Discovery",
+        "tooltipShared": "Shared Discovery",
+        "tooltipClickMystery": "Click to explore this topic",
+        "tooltipClickKnown": "Click to view details",
+        "chatToggle": "AI Uplink"
     },
     "KnowledgePanel": {
         "decrypting": "Decrypting...",
