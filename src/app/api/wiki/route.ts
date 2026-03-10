@@ -4,12 +4,21 @@ import { authOptions } from "@/lib/auth";
 import logger from "@/lib/logger";
 import { withDualTransaction } from '@/lib/transaction';
 import { syncArticleToGraph } from '@/lib/graph';
+import { rateLimit } from '@/lib/rate-limit';
 
 export async function POST(req: Request) {
     // 1. 인증 확인
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+
+    const userId = session.user.id;
+    // Rate limit: 10 requests per minute per user
+    if (!rateLimit(userId, 10, 60000)) {
+        logger.warn(`Rate limit exceeded for user: ${userId}`);
+        return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
     }
 
     try {

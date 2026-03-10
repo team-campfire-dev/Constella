@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { processUserQuery } from "@/lib/wiki-engine";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
@@ -13,6 +14,13 @@ export async function POST(req: Request) {
 
     const userId = session.user.id;
 
+
+
+    // Rate limit: 5 requests per minute per user
+    if (!rateLimit(userId, 5, 60000)) {
+        logger.warn(`Rate limit exceeded for user: ${userId}`);
+        return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
+    }
 
     try {
         const { message, language } = await req.json();
