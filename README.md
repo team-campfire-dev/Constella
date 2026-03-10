@@ -10,7 +10,7 @@
 
 ### 🔭 AI 지식 탐사
 - **통신 콘솔**: Gemini AI에게 질문하면 위키 콘텐츠를 생성합니다
-- **별자리 지도**: D3.js 기반 인터랙티브 그래프로 탐사한 토픽들의 관계를 시각화
+- **별자리 지도**: react-force-graph-2d 기반 인터랙티브 그래프로 탐사한 토픽들의 관계를 시각화
 - **항해 일지**: 발견한 토픽들의 탐사 기록
 - **자동 링크**: AI 응답 내 관련 토픽을 `[[키워드]]`로 연결
 
@@ -37,13 +37,13 @@
 
 | | 기술 |
 |---|---|
-| **Frontend** | Next.js 16, React 19, Tailwind CSS v4, D3.js |
+| **Frontend** | Next.js 16, React 19, Tailwind CSS v4, react-force-graph-2d |
 | **Backend** | Next.js API Routes, NextAuth v4 (JWT) |
 | **Database** | MySQL (Prisma ORM, 이중 클라이언트), Neo4j (지식 그래프) |
 | **AI** | Google Gemini 3 Flash Preview |
 | **실시간** | Server-Sent Events (SSE) |
 | **i18n** | next-intl v4 (한국어/영어) |
-| **테스트** | Vitest (단위 테스트), Playwright (UAT) |
+| **테스트** | Vitest (단위 테스트) |
 
 ---
 
@@ -62,7 +62,6 @@
 npm install
 
 # 환경변수 설정 (.env)
-cp .env.example .env
 # SSH_USER, SSH_HOST, DATABASE_URL, DATABASE_CONTENT_URL,
 # NEO4J_URI, GOOGLE_GENERATIVE_AI_API_KEY,
 # NEXTAUTH_SECRET, GOOGLE_CLIENT_ID 등 설정
@@ -93,7 +92,7 @@ npm run dev
 | `npm run lint` | ESLint 검사 |
 | `npm test` | Vitest 단위 테스트 실행 |
 | `npm run test:watch` | Vitest watch 모드 (파일 변경 시 자동 재실행) |
-| `npm run test:uat` | UAT (Playwright) |
+| `npm run test:uat` | UAT (node --experimental-strip-types) |
 
 ---
 
@@ -102,8 +101,8 @@ npm run dev
 ```
 src/
 ├── app/
-│   ├── api/          # 17개 API 라우트
-│   └── [locale]/     # 14개 페이지 (ko/en)
+│   ├── api/          # 18개 API 라우트
+│   └── [locale]/     # 13개 페이지 (ko/en)
 ├── components/       # UI 컴포넌트
 ├── lib/              # 핵심 모듈 + *.test.ts 단위 테스트
 ├── test/             # Vitest 전역 설정 (mock setup)
