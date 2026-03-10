@@ -1,6 +1,11 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import logger from "@/lib/logger";
 
+export interface ChatHistoryEntry {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
 const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
 if (!apiKey) {
@@ -39,6 +44,7 @@ function normalizeWikiResponse(obj: any): any {
         else if (lowerKey.includes('tags')) newObj.tags = obj[key];
         else if (lowerKey.includes('content')) newObj.content = obj[key];
         else if (lowerKey.includes('chatresponse')) newObj.chatResponse = obj[key];
+        else if (lowerKey.includes('followup') || lowerKey.includes('follow_up')) newObj.isFollowUp = obj[key];
         else newObj[lowerKey] = obj[key];
     }
     return newObj;
@@ -49,7 +55,7 @@ function normalizeWikiResponse(obj: any): any {
  * @param topic 주제
  * @param language 언어 코드 (기본값: 'en')
  */
-export async function generateWikiContent(topic: string, language: string = 'en') {
+export async function generateWikiContent(topic: string, language: string = 'en', conversationHistory?: ChatHistoryEntry[]) {
     if (!apiKey) {
         throw new Error("API 키가 없습니다. .env 파일을 확인해주세요.");
     }
@@ -71,6 +77,7 @@ export async function generateWikiContent(topic: string, language: string = 'en'
      - tags: 문자열 배열 (카테고리).
      - content: 위키 아티클 내용 (Markdown, 객관적, [[links]] 포함).
      - chatResponse: 대화형 답변 (Markdown, [[links]] 포함).
+     - isFollowUp: boolean. 이 질문이 이전 대화의 후속 질문인지 여부. 아래 6번 규칙을 참고하세요.
   3. **Content**:
      - content: 200단어 요약. 인사말 생략. **3-5개의 핵심 과학, 기술, 인문, 예술 등 관련 개념을 [[brackets]]으로 감싸세요**.
      - chatResponse: 친근하고 대화체. 3개 이상의 관련 주제를 [[links]]로 포함하세요.
@@ -83,12 +90,42 @@ export async function generateWikiContent(topic: string, language: string = 'en'
      - **Complex Sentences/Questions**: 사용자 입력이 문장인 경우(예: "양자역학이 뭐야?", "르네상스 설명해줘"), 가장 관련성 높은 명사(예: "양자역학", "르네상스")를 'topic'으로 **추출**하세요.
      - **Rejection**: 입력이 지식 학습과 무관한 복잡한 기술 명령인 경우(예: "gitlab mermaid diagram to svg", "write python code"), 'topic'을 "Unknown"으로, 'content'를 "Invalid Request"로 설정하세요.
      - **Guidance**: 입력이 문장이나 질문이었던 경우, 'chatResponse'에 부드러운 안내를 포함하세요: "효율적인 데이터베이스 조회를 위해 키워드 입력이 권장됩니다. 요청을 다음으로 해석했습니다: [Topic Name]." (타겟 언어로 번역).
+  6. **Follow-Up Detection (대화 맥락 연속성)**:
+     - 이전 대화 이력이 제공된 경우, 현재 질문이 이전 대화의 후속 질문인지 판단하세요.
+     - **후속 질문의 예**: "좀 더 자세히 알려줘", "다른 관점은?", "그게 왜 중요해?", "예시를 들어줘", "아까 그거 관련해서..."
+     - 후속 질문이면 **isFollowUp을 true**로, **topic/canonicalName은 이전 대화에서 다룬 주제와 동일하게** 설정하세요.
+     - 새로운 주제에 대한 질문이면 **isFollowUp을 false**로 설정하세요.
+     - 후속 질문일 때의 chatResponse는 이전 대화 맥락을 자연스럽게 이어가며 답변하세요. content(위키 아티클)도 해당 주제에 대해 정상적으로 작성하세요.
   `;
 
     let text = "";
     try {
+        // Build multi-turn contents array
+        const contents: { role: string; parts: { text: string }[] }[] = [];
+
+        // Add conversation history as alternating user/model turns
+        if (conversationHistory && conversationHistory.length > 0) {
+            // System prompt as preamble in the first user turn
+            contents.push({ role: "user", parts: [{ text: prompt }] });
+            contents.push({ role: "model", parts: [{ text: "네, 위의 지침을 이해했습니다. 사용자의 질문에 JSON 형식으로 답변하겠습니다." }] });
+
+            // Add previous conversation turns (last N messages, excluding the current query)
+            for (const entry of conversationHistory) {
+                contents.push({
+                    role: entry.role === 'user' ? 'user' : 'model',
+                    parts: [{ text: entry.content }]
+                });
+            }
+
+            // Current query as the final user turn
+            contents.push({ role: "user", parts: [{ text: topic }] });
+        } else {
+            // No history: single-turn (original behavior)
+            contents.push({ role: "user", parts: [{ text: prompt }] });
+        }
+
         const result = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            contents,
             generationConfig: { responseMimeType: "application/json" }
         });
         const response = await result.response;
@@ -120,8 +157,9 @@ export async function generateWikiContent(topic: string, language: string = 'en'
         parsed.tags = parsed.tags || [];
         parsed.canonicalName = parsed.canonicalName || parsed.topic;
         parsed.chatResponse = parsed.chatResponse || "";
+        parsed.isFollowUp = parsed.isFollowUp === true;
 
-        return parsed as { topic: string, title?: string, canonicalName: string, tags: string[], content: string, chatResponse: string };
+        return parsed as { topic: string, title?: string, canonicalName: string, tags: string[], content: string, chatResponse: string, isFollowUp: boolean };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
         logger.error("Gemini 생성 오류:", { message: error.message, stack: error.stack, rawResponse: text });

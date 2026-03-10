@@ -2,7 +2,7 @@
 import prismaContent from '@/lib/prisma-content'; // Content DB
 import { withDualTransaction } from '@/lib/transaction';
 import { syncArticleToGraph, mergeAliasesToCanonical } from '@/lib/graph';
-import { generateWikiContent } from '@/lib/gemini';
+import { generateWikiContent, ChatHistoryEntry } from '@/lib/gemini';
 import logger from "@/lib/logger";
 
 interface CachedKeyword {
@@ -117,7 +117,7 @@ interface WikiResponse {
  * 3. 필요 시 AI 콘텐츠 생성 및 그래프 동기화
  * 4. 사용자 탐사 기록(ShipLog) 업데이트
  */
-export async function processUserQuery(userId: string, query: string, language: string = 'en'): Promise<WikiResponse> {
+export async function processUserQuery(userId: string, query: string, language: string = 'en', chatHistory?: ChatHistoryEntry[]): Promise<WikiResponse> {
     const normalizedName = query.trim().toLowerCase();
 
     // 1. 별칭(Alias)을 통해 주제(Topic) 찾기
@@ -188,8 +188,8 @@ export async function processUserQuery(userId: string, query: string, language: 
     if (needsGeneration) {
         logger.info(`[WikiEngine] 콘텐츠 생성 중: ${query} (언어: ${language})`);
 
-        // 3. AI 콘텐츠 생성
-        const generated = await generateWikiContent(query, language);
+        // 3. AI 콘텐츠 생성 (대화 이력 포함)
+        const generated = await generateWikiContent(query, language, chatHistory);
 
         // [추가] 마크다운 링크 정규화
         // AI가 생성한 [Text](URL) 형식을 내부 링크 형식 [[Text]]로 변환
@@ -205,6 +205,41 @@ export async function processUserQuery(userId: string, query: string, language: 
         // 답변만 반환하고 DB에 저장하지 않음.
         if (generated.topic === "Unknown") {
             return { answer, content, isNew: false, topicId: "" };
+        }
+
+        // [추가] 후속 질문 경량 경로
+        // Gemini가 isFollowUp: true 반환 시, WikiArticle을 건드리지 않고 chatResponse만 사용
+        if (generated.isFollowUp) {
+            const followUpCanonical = (generated.canonicalName || generated.topic).trim().toLowerCase();
+            const followUpTopic = await prismaContent.topic.findUnique({
+                where: { name: followUpCanonical },
+                include: { articles: { where: { language } } }
+            });
+
+            if (followUpTopic) {
+                // 기존 Topic 발견: chatResponse만 반환, WikiArticle 미수정
+                topicId = followUpTopic.id;
+
+                // ShipLog 업데이트 (재방문)
+                try {
+                    await prismaContent.user.upsert({
+                        where: { id: userId },
+                        update: {},
+                        create: { id: userId }
+                    });
+                    await prismaContent.shipLog.upsert({
+                        where: { userId_topicId: { userId, topicId: topicId! } },
+                        update: { discoveredAt: new Date() },
+                        create: { userId, topicId: topicId!, discoveredAt: new Date() }
+                    });
+                } catch (e) {
+                    logger.error("[WikiEngine] Follow-up ShipLog 업데이트 실패:", { error: e instanceof Error ? e.message : e });
+                }
+
+                return { answer, content: followUpTopic.articles?.[0]?.content || '', isNew: false, topicId };
+            }
+            // 기존 Topic 미발견 시 정상 생성 경로로 폴스루
+            logger.info(`[WikiEngine] Follow-up topic not found in DB, proceeding with full generation: ${followUpCanonical}`);
         }
 
         // 정식 명칭(Canonical Name) 사용 (중복 방지)
