@@ -19,7 +19,8 @@ export async function GET(req: NextRequest) {
 
     // 🛡️ Sentinel: Authorize channel access
     if (channel.startsWith('dm:')) {
-        if (!channel.includes(userId)) {
+        const participants = channel.replace('dm:', '').split('_');
+        if (!participants.includes(userId)) {
             logger.warn(`Unauthorized SSE DM access attempt: user=${userId}, channel=${channel}`);
             return new Response('Forbidden', { status: 403 });
         }

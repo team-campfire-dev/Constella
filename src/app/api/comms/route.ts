@@ -33,7 +33,8 @@ export async function POST(req: NextRequest) {
 
         // 🛡️ Sentinel: Authorize channel access
         if (channel.startsWith('dm:')) {
-            if (!channel.includes(userId)) {
+            const participants = channel.replace('dm:', '').split('_');
+            if (!participants.includes(userId)) {
                 logger.warn(`Unauthorized Comms POST access attempt: user=${userId}, channel=${channel}`);
                 return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
             }
@@ -113,7 +114,8 @@ export async function GET(req: NextRequest) {
 
     // 🛡️ Sentinel: Authorize channel access
     if (channel.startsWith('dm:')) {
-        if (!channel.includes(userId)) {
+        const participants = channel.replace('dm:', '').split('_');
+        if (!participants.includes(userId)) {
             logger.warn(`Unauthorized Comms GET access attempt: user=${userId}, channel=${channel}`);
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }

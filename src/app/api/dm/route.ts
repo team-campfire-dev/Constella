@@ -84,7 +84,8 @@ export async function GET(req: NextRequest) {
                 where: {
                     channel: { startsWith: 'dm:' },
                     OR: [
-                        { channel: { contains: userId } },
+                        { channel: { startsWith: `dm:${userId}_` } },
+                        { channel: { endsWith: `_${userId}` } },
                     ],
                 },
                 orderBy: { createdAt: 'desc' },
@@ -94,7 +95,9 @@ export async function GET(req: NextRequest) {
             const channelMap = new Map<string, typeof dmMessages[0]>();
             for (const msg of dmMessages) {
                 // Verify this user is actually in the channel
-                if (!msg.channel.includes(userId)) continue;
+                const participants = msg.channel.replace('dm:', '').split('_');
+                if (!participants.includes(userId)) continue;
+
                 if (!channelMap.has(msg.channel)) {
                     channelMap.set(msg.channel, msg);
                 }
