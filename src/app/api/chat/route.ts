@@ -47,7 +47,21 @@ export async function POST(req: Request) {
         });
 
         // Wiki Engine Query
-        const wikiResult = await processUserQuery(userId, message, language);
+        // Fetch recent conversation history for context continuity
+        const recentHistory = await prismaContent.chatHistory.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+            select: { role: true, content: true }
+        });
+
+        // Reverse to chronological order and map to ChatHistoryEntry format
+        const chatHistory = recentHistory.reverse().map(msg => ({
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content
+        }));
+
+        const wikiResult = await processUserQuery(userId, message, language, chatHistory);
 
         // Save AI Response to Chat History (Content DB)
         // Note: We save the "answer" (chat response) to chat history, but the "content" (wiki data) is already saved in WikiArticle.

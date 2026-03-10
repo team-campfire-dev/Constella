@@ -29,7 +29,10 @@
         "signInGoogle": "Google로 로그인",
         "email": "이메일 주소",
         "password": "비밀번호",
-        "signIn": "로그인"
+        "signIn": "로그인",
+        "subtitle": "우주 탐사 지식 플랫폼",
+        "orContinueWith": "또는",
+        "loginFailed": "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요."
     },
     "Profile": {
         "title": "사용자 정보",

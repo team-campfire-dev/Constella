@@ -16,6 +16,8 @@ vi.mock('@google/generative-ai', () => {
 });
 
 const { batchTranslate, generateWikiContent } = await import('./gemini');
+type ChatHistoryEntry = import('./gemini').ChatHistoryEntry;
+
 
 describe('batchTranslate', () => {
     beforeEach(() => {
@@ -97,6 +99,7 @@ describe('generateWikiContent', () => {
             tags: ['Science', 'Physics'],
             content: 'Quantum physics is...',
             chatResponse: "Hello! Let's talk about quantum physics.",
+            isFollowUp: false,
         };
 
         mockGenerateContent.mockResolvedValueOnce({
@@ -107,8 +110,80 @@ describe('generateWikiContent', () => {
         expect(result).toEqual(mockResponse);
     });
 
+    it('conversationHistory 전달 시 multi-turn contents 구성', async () => {
+        const mockResponse = {
+            topic: 'Quantum Physics',
+            content: 'More details about quantum physics...',
+            chatResponse: 'Here are more details.',
+            isFollowUp: true,
+            canonicalName: 'Quantum Physics',
+            tags: ['Science'],
+        };
+
+        mockGenerateContent.mockResolvedValueOnce({
+            response: { text: () => JSON.stringify(mockResponse) },
+        });
+
+        const history: ChatHistoryEntry[] = [
+            { role: 'user', content: '양자역학이 뭐야?' },
+            { role: 'assistant', content: '양자역학은 미시 세계의 물리학입니다.' },
+        ];
+
+        const result = await generateWikiContent('좀 더 자세히 알려줘', 'ko', history);
+
+        // Verify multi-turn contents structure:
+        // [system prompt, model ack, user msg, model msg, current query]
+        const callArgs = mockGenerateContent.mock.calls[0][0];
+        const contents = callArgs.contents;
+        expect(contents.length).toBe(5); // prompt + ack + 2 history + current query
+        expect(contents[0].role).toBe('user');   // system prompt
+        expect(contents[1].role).toBe('model');  // model acknowledgment
+        expect(contents[2].role).toBe('user');   // history user msg
+        expect(contents[3].role).toBe('model');  // history assistant msg
+        expect(contents[4].role).toBe('user');   // current query
+        expect(contents[4].parts[0].text).toBe('좀 더 자세히 알려줘');
+
+        expect(result.isFollowUp).toBe(true);
+    });
+
+    it('conversationHistory 없으면 single-turn (기존 동작)', async () => {
+        const mockResponse = {
+            topic: 'Mars',
+            content: 'Mars is the fourth planet.',
+            chatResponse: 'Mars is fascinating!',
+            isFollowUp: false,
+        };
+
+        mockGenerateContent.mockResolvedValueOnce({
+            response: { text: () => JSON.stringify(mockResponse) },
+        });
+
+        const result = await generateWikiContent('Mars', 'en');
+
+        const callArgs = mockGenerateContent.mock.calls[0][0];
+        const contents = callArgs.contents;
+        expect(contents.length).toBe(1); // single prompt only
+        expect(contents[0].role).toBe('user');
+
+        expect(result.isFollowUp).toBe(false);
+    });
+
+    it('isFollowUp 기본값은 false', async () => {
+        const mockResponse = {
+            topic: 'Biology',
+            content: 'Study of life.',
+        };
+
+        mockGenerateContent.mockResolvedValueOnce({
+            response: { text: () => JSON.stringify(mockResponse) },
+        });
+
+        const result = await generateWikiContent('Biology', 'en');
+        expect(result.isFollowUp).toBe(false);
+    });
+
     it('마크다운 코드 블록 처리', async () => {
-        const mockResponse = { topic: 'AI', content: 'Artificial Intelligence is...' };
+        const mockResponse = { topic: 'AI', content: 'Artificial Intelligence is...', isFollowUp: false };
         mockGenerateContent.mockResolvedValueOnce({
             response: { text: () => '```json\n' + JSON.stringify(mockResponse) + '\n```' },
         });
@@ -195,4 +270,20 @@ describe('generateWikiContent', () => {
         const result = await generateWikiContent('Physics', 'en');
         expect(result.topic).toBe('Physics');
     });
+
+    it('isFollowUp 키 정규화 (대소문자 무시)', async () => {
+        const mockResponse = {
+            topic: 'Math',
+            content: 'Mathematics is...',
+            IsFollowUp: true,
+        };
+
+        mockGenerateContent.mockResolvedValueOnce({
+            response: { text: () => JSON.stringify(mockResponse) },
+        });
+
+        const result = await generateWikiContent('Math', 'en');
+        expect(result.isFollowUp).toBe(true);
+    });
+
 });

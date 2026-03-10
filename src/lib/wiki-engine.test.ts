@@ -182,6 +182,7 @@ describe('processUserQuery', () => {
             tags: ['Technology'],
             content: 'AI is...',
             chatResponse: 'Let me tell you about AI.',
+            isFollowUp: false,
         });
 
         // Post-gen dedup: not found
@@ -222,6 +223,7 @@ describe('processUserQuery', () => {
             tags: ['Physics'],
             content: 'Content about quantum...',
             chatResponse: 'Response about quantum...',
+            isFollowUp: false,
         });
 
         // Post-generation dedup check: findUnique with canonicalName finds existing topic
@@ -255,6 +257,7 @@ describe('processUserQuery', () => {
             tags: ['Physics'],
             content: 'Gravity is a fundamental force.',
             chatResponse: 'Let me explain gravity.',
+            isFollowUp: false,
         });
 
         // Post-gen dedup: topic exists but article is old (4 months ago)
@@ -305,6 +308,7 @@ describe('processUserQuery', () => {
             tags: [],
             content: 'Invalid Request',
             chatResponse: 'I cannot process this request.',
+            isFollowUp: false,
         });
 
         const result = await processUserQuery('user-1', 'write python code', 'en');
@@ -329,6 +333,7 @@ describe('processUserQuery', () => {
             tags: ['Astronomy'],
             content: 'A black hole is...',
             chatResponse: 'Black holes are fascinating!',
+            isFollowUp: false,
         });
 
         // Post-gen check: canonical topic exists with fresh content
@@ -387,5 +392,93 @@ describe('processUserQuery', () => {
         // Result should still be returned despite ShipLog error
         expect(result.isNew).toBe(false);
         expect(result.topicId).toBe('topic-1');
+    });
+
+    // ─── 9. 후속 질문 경량 경로 (isFollowUp) ─────────────────────────────
+
+    it('isFollowUp=true일 때 기존 Topic 반환, withDualTransaction 미호출', async () => {
+        // All lookups fail -> needs generation
+        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
+        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
+        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
+        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
+
+        // Gemini returns isFollowUp: true
+        mockedGenerateWiki.mockResolvedValueOnce({
+            topic: 'Quantum Mechanics',
+            canonicalName: 'Quantum Mechanics',
+            title: '양자역학',
+            tags: ['Physics'],
+            content: 'More about quantum mechanics...',
+            chatResponse: '네, 양자역학에 대해 더 자세히 알려드릴게요.',
+            isFollowUp: true,
+        });
+
+        // Follow-up topic lookup: found existing topic
+        const existingTopic = makeTopic();
+        mockedPrisma.topic.findUnique.mockResolvedValueOnce(existingTopic as any);
+
+        // ShipLog
+        mockedPrisma.user.upsert.mockResolvedValue({} as any);
+        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
+
+        const chatHistory = [
+            { role: 'user' as const, content: '양자역학이 뭐야?' },
+            { role: 'assistant' as const, content: '양자역학은 미시 세계의 물리학입니다.' },
+        ];
+
+        const result = await processUserQuery('user-1', '좀 더 자세히 알려줘', 'en', chatHistory);
+
+        // Should NOT trigger dual transaction (no wiki update)
+        expect(mockedTransaction).not.toHaveBeenCalled();
+        expect(result.isNew).toBe(false);
+        expect(result.topicId).toBe('topic-1');
+        // chatResponse should be used as answer (after markdown normalization)
+        expect(result.answer).toContain('양자역학에 대해 더 자세히');
+    });
+
+    it('isFollowUp=true이지만 DB에 Topic 없으면 정상 생성 경로로 폴스루', async () => {
+        // All lookups fail
+        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
+        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
+        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
+        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
+
+        // Gemini returns isFollowUp: true, but topic doesn't exist in DB
+        mockedGenerateWiki.mockResolvedValueOnce({
+            topic: 'Dark Matter',
+            canonicalName: 'Dark Matter',
+            title: 'Dark Matter',
+            tags: ['Astrophysics'],
+            content: 'Dark matter is...',
+            chatResponse: 'Let me explain dark matter.',
+            isFollowUp: true,
+        });
+
+        // Follow-up topic lookup: NOT found
+        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
+
+        // Post-gen dedup: also not found
+        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
+
+        // Should fall through to full generation
+        setupDualTransaction();
+
+        // KeywordCache refresh
+        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
+        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
+
+        // ShipLog
+        mockedPrisma.user.upsert.mockResolvedValue({} as any);
+        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
+
+        const result = await processUserQuery('user-1', '아까 그거 뭐였지', 'en', [
+            { role: 'user' as const, content: 'dark matter' },
+            { role: 'assistant' as const, content: 'Some response about dark matter.' },
+        ]);
+
+        // Should proceed with full generation since topic wasn't found
+        expect(result.isNew).toBe(true);
+        expect(mockedTransaction).toHaveBeenCalled();
     });
 });
