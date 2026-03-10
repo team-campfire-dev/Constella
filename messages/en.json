@@ -29,7 +29,10 @@
         "signInGoogle": "Sign in with Google",
         "email": "Email address",
         "password": "Password",
-        "signIn": "Sign in"
+        "signIn": "Sign in",
+        "subtitle": "Space Exploration Knowledge Platform",
+        "orContinueWith": "or",
+        "loginFailed": "Login failed. Please check your email and password."
     },
     "Profile": {
         "title": "User Info",
