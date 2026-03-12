@@ -116,7 +116,17 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
                     </span>
                 );
             }
-            return <a href={href} {...props} className="text-cyan-500 underline" target="_blank" rel="noopener noreferrer">{children}</a>
+
+            // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
+            const isSafeUrl = (url?: string) => {
+                if (!url) return true;
+                const lowerUrl = url.trim().toLowerCase();
+                return !lowerUrl.startsWith('javascript:') && !lowerUrl.startsWith('vbscript:') && !lowerUrl.startsWith('data:');
+            };
+
+            const safeHref = isSafeUrl(href) ? href : '#';
+
+            return <a href={safeHref} {...props} className="text-cyan-500 underline" target="_blank" rel="noopener noreferrer">{children}</a>
         }
     }), [handleMarkdownLinkClick]);
 

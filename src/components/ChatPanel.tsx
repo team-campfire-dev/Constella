@@ -157,11 +157,23 @@ export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscov
     // Markdown renderer
     const markdownComponents = useMemo(() => ({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        a: ({ ...props }: any) => (
-            <span className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4">
-                {props.children}
-            </span>
-        )
+        a: ({ ...props }: any) => {
+            // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
+            // even though ChatPanel currently renders a span without href, this protects future changes
+            const isSafeUrl = (url?: string) => {
+                if (!url) return true;
+                const lowerUrl = url.trim().toLowerCase();
+                return !lowerUrl.startsWith('javascript:') && !lowerUrl.startsWith('vbscript:') && !lowerUrl.startsWith('data:');
+            };
+
+            const safeHref = isSafeUrl(props.href) ? props.href : '#';
+
+            return (
+                <span className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4" data-href={safeHref}>
+                    {props.children}
+                </span>
+            );
+        }
     }), []);
 
     if (!isOpen) return null;

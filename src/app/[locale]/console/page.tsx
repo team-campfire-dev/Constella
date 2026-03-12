@@ -641,14 +641,25 @@ export default function ConsolePage() {
     // Memoize the components map so ReactMarkdown doesn't re-render
     const markdownComponents = useMemo(() => ({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        a: ({ ...props }: any) => (
-            <span
-                className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4"
-                onClick={(e) => handleMarkdownLinkClick(e, props.href)}
-            >
-                {props.children}
-            </span>
-        )
+        a: ({ ...props }: any) => {
+            // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
+            const isSafeUrl = (url?: string) => {
+                if (!url) return true;
+                const lowerUrl = url.trim().toLowerCase();
+                return !lowerUrl.startsWith('javascript:') && !lowerUrl.startsWith('vbscript:') && !lowerUrl.startsWith('data:');
+            };
+
+            const safeHref = isSafeUrl(props.href) ? props.href : '#';
+
+            return (
+                <span
+                    className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4"
+                    onClick={(e) => handleMarkdownLinkClick(e, safeHref)}
+                >
+                    {props.children}
+                </span>
+            );
+        }
     }), [handleMarkdownLinkClick]);
 
     // Handle textarea keydown (Enter to send, Shift+Enter for newline)
