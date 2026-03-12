@@ -31,6 +31,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         }
 
+        // 🛡️ Sentinel: Limit message length to prevent DoS and memory exhaustion
+        if (message.length > 1000) {
+            return NextResponse.json({ error: 'Message is too long' }, { status: 400 });
+        }
+
         // 🛡️ Sentinel: Authorize channel access
         if (channel.startsWith('dm:')) {
             const participants = channel.replace('dm:', '').split('_');

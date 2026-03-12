@@ -172,6 +172,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'recipientId and message are required' }, { status: 400 });
         }
 
+        // 🛡️ Sentinel: Limit message length to prevent DoS and memory exhaustion
+        if (message.length > 1000) {
+            return NextResponse.json({ error: 'Message is too long' }, { status: 400 });
+        }
+
         if (recipientId === userId) {
             return NextResponse.json({ error: 'Cannot send DM to yourself' }, { status: 400 });
         }
