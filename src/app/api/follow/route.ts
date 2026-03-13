@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
 import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 1000;
 
 // POST /api/follow — Follow a user (Add to Crew)
 export async function POST(req: NextRequest) {
@@ -13,6 +16,12 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting
+    if (!checkRateLimit('follow_post', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: follow_post`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
 
     try {
         const { targetUserId } = await req.json();
@@ -52,6 +61,12 @@ export async function DELETE(req: NextRequest) {
     }
 
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting
+    if (!checkRateLimit('follow_delete', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: follow_delete`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
 
     try {
         const { targetUserId } = await req.json();
