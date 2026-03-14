@@ -31,6 +31,11 @@ export async function GET(req: NextRequest) {
 
     const userId = session.user.id;
     const { searchParams } = new URL(req.url);
+
+    if (!checkRateLimit("dm_get", userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: dm_get`);
+        return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
     const partnerId = searchParams.get('partner');
 
     try {
