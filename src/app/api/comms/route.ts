@@ -39,9 +39,14 @@ export async function POST(req: NextRequest) {
         // 🛡️ Sentinel: Authorize channel access
         if (channel.startsWith('dm:')) {
             const participants = channel.replace('dm:', '').split('_');
-            if (!participants.includes(userId)) {
+            if (participants.length !== 2 || !participants.includes(userId)) {
                 logger.warn(`Unauthorized Comms POST access attempt: user=${userId}, channel=${channel}`);
                 return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
+            const expectedChannel = `dm:${[participants[0], participants[1]].sort().join('_')}`;
+            if (channel !== expectedChannel) {
+                logger.warn(`Invalid DM channel format attempt: user=${userId}, channel=${channel}`);
+                return NextResponse.json({ error: 'Invalid channel format' }, { status: 400 });
             }
         } else if (channel.startsWith('expedition:')) {
             const expeditionId = channel.replace('expedition:', '');
@@ -120,9 +125,14 @@ export async function GET(req: NextRequest) {
     // 🛡️ Sentinel: Authorize channel access
     if (channel.startsWith('dm:')) {
         const participants = channel.replace('dm:', '').split('_');
-        if (!participants.includes(userId)) {
+        if (participants.length !== 2 || !participants.includes(userId)) {
             logger.warn(`Unauthorized Comms GET access attempt: user=${userId}, channel=${channel}`);
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        const expectedChannel = `dm:${[participants[0], participants[1]].sort().join('_')}`;
+        if (channel !== expectedChannel) {
+            logger.warn(`Invalid DM channel format attempt: user=${userId}, channel=${channel}`);
+            return NextResponse.json({ error: 'Invalid channel format' }, { status: 400 });
         }
     } else if (channel.startsWith('expedition:')) {
         const expeditionId = channel.replace('expedition:', '');
