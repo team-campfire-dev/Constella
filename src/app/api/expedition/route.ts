@@ -93,6 +93,14 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Name is required' }, { status: 400 });
         }
 
+        // 🛡️ Sentinel: Limit input lengths to prevent DoS
+        if (name.length > 255) {
+            return NextResponse.json({ error: 'Name is too long' }, { status: 400 });
+        }
+        if (description && description.length > 1000) {
+            return NextResponse.json({ error: 'Description is too long' }, { status: 400 });
+        }
+
         // Ensure user exists in content DB
         await prismaContent.user.upsert({ where: { id: userId }, create: { id: userId }, update: {} });
 

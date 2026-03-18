@@ -31,6 +31,14 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Title and content are required' }, { status: 400 });
         }
 
+        // 🛡️ Sentinel: Limit input lengths to prevent DoS
+        if (title.length > 255) {
+            return NextResponse.json({ error: 'Title is too long' }, { status: 400 });
+        }
+        if (content.length > 50000) {
+            return NextResponse.json({ error: 'Content is too long' }, { status: 400 });
+        }
+
         // 2. 수동 제출을 위한 듀얼 트랜잭션
         // 참고: 새로운 Schema (Topic + WikiArticle)를 사용합니다.
         // Manual submission implies we treat 'title' as the Topic Name.
