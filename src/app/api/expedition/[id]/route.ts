@@ -131,8 +131,20 @@ export async function PATCH(
 
         const body = await req.json();
         const updateData: Record<string, string> = {};
-        if (body.name) updateData.name = body.name.trim();
-        if (body.description !== undefined) updateData.description = body.description?.trim() || '';
+
+        // 🛡️ Sentinel: Limit input lengths to prevent DoS
+        if (body.name) {
+            if (body.name.length > 255) {
+                return NextResponse.json({ error: 'Name is too long' }, { status: 400 });
+            }
+            updateData.name = body.name.trim();
+        }
+        if (body.description !== undefined) {
+            if (body.description && body.description.length > 1000) {
+                return NextResponse.json({ error: 'Description is too long' }, { status: 400 });
+            }
+            updateData.description = body.description?.trim() || '';
+        }
         if (body.status && ['active', 'completed', 'archived'].includes(body.status)) {
             updateData.status = body.status;
         }
