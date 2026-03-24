@@ -33,6 +33,14 @@ describe('batchTranslate', () => {
         });
     });
 
+    it('topics가 빈 배열이면 빈 객체 반환', async () => {
+        const result = await batchTranslate([], 'en');
+        expect(result).toEqual({});
+
+        const resultKo = await batchTranslate([], 'ko');
+        expect(resultKo).toEqual({});
+    });
+
     it('non-English 번역 성공', async () => {
         const mockResponse = {
             'Black Hole': '블랙홀',
