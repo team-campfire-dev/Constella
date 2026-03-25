@@ -32,7 +32,22 @@
         "signIn": "로그인",
         "subtitle": "우주 탐사 지식 플랫폼",
         "orContinueWith": "또는",
-        "loginFailed": "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요."
+        "loginFailed": "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.",
+        "noAccount": "아직 계정이 없으신가요?",
+        "registerLink": "회원가입"
+    },
+    "Register": {
+        "title": "새 탐험가 등록",
+        "name": "이름",
+        "email": "이메일 주소",
+        "password": "비밀번호",
+        "register": "회원가입",
+        "subtitle": "당신의 우주 탐사를 시작하세요",
+        "orContinueWith": "또는",
+        "registerFailed": "회원가입에 실패했습니다. 다른 이메일을 사용해주세요.",
+        "registerSuccess": "회원가입 성공! 로그인 중...",
+        "hasAccount": "이미 계정이 있으신가요?",
+        "loginLink": "로그인"
     },
     "Profile": {
         "title": "사용자 정보",

@@ -4,6 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import prisma from "@/lib/prisma"
 import crypto from "node:crypto"
+import bcrypt from "bcryptjs"
 
 /**
  * Compares two strings using a constant-time algorithm to prevent timing attacks.
@@ -23,24 +24,40 @@ export const authOptions: NextAuthOptions = {
             clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
         }),
         CredentialsProvider({
-            name: 'Local Agent',
+            name: 'Constella Account',
             credentials: {
-                username: { label: "Username", type: "text" },
+                username: { label: "Email", type: "text" },
                 password: { label: "Password", type: "password" }
             },
             async authorize(credentials) {
+                if (!credentials?.username || !credentials?.password) {
+                    return null;
+                }
+
+                // 1. Agent Account Check (Legacy/Admin support)
                 const agentEmail = process.env.AGENT_EMAIL;
                 const agentPassword = process.env.AGENT_PASSWORD;
 
                 if (agentEmail && agentPassword &&
-                    credentials?.username === agentEmail &&
-                    // Use safeCompare to prevent timing attacks
-                    safeCompare(credentials?.password || "", agentPassword)) {
-                    const user = await prisma.user.findUnique({
+                    credentials.username === agentEmail &&
+                    safeCompare(credentials.password, agentPassword)) {
+                    return await prisma.user.findUnique({
                         where: { email: agentEmail }
                     });
-                    return user;
                 }
+
+                // 2. Regular User DB Check
+                const user = await prisma.user.findUnique({
+                    where: { email: credentials.username }
+                });
+
+                if (user && user.password) {
+                    const isValid = await bcrypt.compare(credentials.password, user.password);
+                    if (isValid) {
+                        return user;
+                    }
+                }
+
                 return null;
             }
         }),
