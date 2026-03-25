@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
 import prismaContent from '@/lib/prisma-content';
-import { logger } from '@/lib/logger';
+import logger from '@/lib/logger';
 
 export async function POST(req: Request) {
     try {
@@ -36,8 +36,8 @@ export async function POST(req: Request) {
         // Sync to Content DB (Constella architecture requirement)
         await prismaContent.user.upsert({
             where: { id: user.id },
-            update: { name: user.name },
-            create: { id: user.id, name: user.name },
+            update: {},
+            create: { id: user.id },
         });
 
         logger.info(`New user registered: ${email}`);
