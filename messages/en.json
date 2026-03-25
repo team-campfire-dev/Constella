@@ -237,5 +237,24 @@
         "inputPlaceholder": "Type a message...",
         "send": "Send",
         "sendSignal": "Send Direct Signal"
+    },
+    "Landing": {
+        "heroBadge": "Constella v1.0 Released",
+        "heroTitle": "Explore the Cosmos of Knowledge",
+        "heroSubtitle": "Discover uncharted topics with AI and build your own constellation map. Are you ready to navigate the universe of knowledge with other explorers?",
+        "ctaPrimary": "Start Exploring",
+        "ctaSecondary": "Sign In",
+        "featuresTitle": "Core Exploration Features",
+        "feature1Title": "🔭 AI Knowledge Discovery",
+        "feature1Desc": "Ask the AI via the Comms Console and instantly discover new wiki content.",
+        "feature2Title": "✨ Star Map",
+        "feature2Desc": "Visualize the relationships between the knowledge you've explored in an interactive node graph.",
+        "feature3Title": "👥 Co-op Expeditions",
+        "feature3Desc": "Form a crew to share your discoveries and communicate in real-time.",
+        "demoTitle": "See It in Action",
+        "demoSubtitle": "Watch how knowledge exploration works in Constella.",
+        "demoChatUser": "What exactly is Quantum Entanglement?",
+        "demoChatAI": "Quantum entanglement is a physical phenomenon where two or more particles affect each other's state instantly, regardless of the distance between them. Einstein famously called this 'spooky action at a distance'.",
+        "demoChatContext": "New knowledge [[Quantum Entanglement]] added to your Star Map."
     }
 }
