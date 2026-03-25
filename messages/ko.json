@@ -255,6 +255,12 @@
         "demoSubtitle": "Constella에서 지식을 탐구하는 과정을 확인해보세요.",
         "demoChatUser": "양자 얽힘이 정확히 뭐야?",
         "demoChatAI": "양자 얽힘(Quantum Entanglement)은 두 개 이상의 입자가 아무리 멀리 떨어져 있어도 즉각적으로 서로의 상태에 영향을 미치는 물리적 현상입니다. 아인슈타인은 이를 '유령 같은 원격 작용'이라고 불렀습니다.",
-        "demoChatContext": "새로운 지식 [[양자 얽힘]]이 별자리 지도에 추가되었습니다."
+        "demoChatContext": "새로운 지식 [[양자 얽힘]]이 별자리 지도에 추가되었습니다.",
+        "demoTabConsole": "콘솔",
+        "demoTabStarMap": "별자리 지도",
+        "demoNodeMain": "양자 얽힘",
+        "demoNodeChild1": "유령 같은 원격 작용",
+        "demoNodeChild2": "알베르트 아인슈타인",
+        "footer": "© 2026 Constella Exploration Project."
     }
 }

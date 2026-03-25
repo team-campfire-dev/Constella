@@ -1,16 +1,16 @@
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { redirect } from "@/i18n/navigation"
 import { getTranslations } from "next-intl/server"
 import DashboardLayout from '@/components/DashboardLayout';
 import StarMapWrapper from '@/components/StarMapWrapper';
+import LandingPage from '@/components/LandingPage';
 
 export default async function Home() {
   const session = await getServerSession(authOptions)
   const t = await getTranslations('StarMap')
 
   if (!session) {
-    redirect({ href: "/login", locale: "ko" });
+    return <LandingPage />;
   }
 
   return (

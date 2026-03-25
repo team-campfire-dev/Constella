@@ -125,8 +125,8 @@ export default function LandingPage() {
                                 <div className="w-3 h-3 rounded-full bg-green-500/80" />
                             </div>
                             <div className="flex items-center gap-4 text-xs font-medium text-gray-500 uppercase tracking-widest border-l border-white/[0.1] pl-4">
-                                <span className="flex items-center gap-1.5 text-cyan-400"><Terminal className="w-3.5 h-3.5" /> Console</span>
-                                <span className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> Star Map</span>
+                                <span className="flex items-center gap-1.5 text-cyan-400"><Terminal className="w-3.5 h-3.5" /> {t('demoTabConsole')}</span>
+                                <span className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> {t('demoTabStarMap')}</span>
                             </div>
                         </div>
 
@@ -214,7 +214,7 @@ export default function LandingPage() {
                                         <div className="absolute w-8 h-8 bg-cyan-400/40 rounded-full animate-pulse" />
                                         <div className="w-5 h-5 bg-cyan-400 rounded-full shadow-[0_0_20px_rgba(34,211,238,0.8)] z-10" />
                                         <div className="absolute top-8 whitespace-nowrap px-2 py-1 bg-[#1C1E2D]/90 border border-cyan-500/30 text-cyan-300 text-[10px] rounded backdrop-blur-sm font-medium z-20 shadow-lg">
-                                            {t('demoChatUser').includes('양자') ? '양자 얽힘' : 'Quantum Entanglement'}
+                                            {t('demoNodeMain')}
                                         </div>
                                     </div>
                                 </div>
@@ -224,7 +224,7 @@ export default function LandingPage() {
                                     <div className="relative flex items-center justify-center">
                                         <div className="w-3 h-3 bg-purple-400 rounded-full shadow-[0_0_15px_rgba(167,139,250,0.6)] z-10" />
                                         <div className="absolute top-5 whitespace-nowrap px-1.5 py-0.5 bg-[#1C1E2D]/80 border border-purple-500/20 text-purple-300 text-[9px] rounded backdrop-blur-sm z-20">
-                                            {t('demoChatUser').includes('양자') ? '유령 같은 원격 작용' : 'Spooky Action'}
+                                            {t('demoNodeChild1')}
                                         </div>
                                     </div>
                                 </div>
@@ -234,7 +234,7 @@ export default function LandingPage() {
                                     <div className="relative flex items-center justify-center">
                                         <div className="w-3 h-3 bg-purple-400 rounded-full shadow-[0_0_15px_rgba(167,139,250,0.6)] z-10" />
                                         <div className="absolute top-5 whitespace-nowrap px-1.5 py-0.5 bg-[#1C1E2D]/80 border border-purple-500/20 text-purple-300 text-[9px] rounded backdrop-blur-sm z-20">
-                                            {t('demoChatUser').includes('양자') ? '알베르트 아인슈타인' : 'Albert Einstein'}
+                                            {t('demoNodeChild2')}
                                         </div>
                                     </div>
                                 </div>
@@ -282,7 +282,7 @@ export default function LandingPage() {
             
             {/* Footer */}
             <footer className="w-full text-center py-8 border-t border-white/[0.05] mt-auto">
-                <p className="text-gray-600 text-sm">© 2026 Constella Exploration Project.</p>
+                <p className="text-gray-600 text-sm">{t('footer')}</p>
             </footer>
         </div>
     );

@@ -255,6 +255,12 @@
         "demoSubtitle": "Watch how knowledge exploration works in Constella.",
         "demoChatUser": "What exactly is Quantum Entanglement?",
         "demoChatAI": "Quantum entanglement is a physical phenomenon where two or more particles affect each other's state instantly, regardless of the distance between them. Einstein famously called this 'spooky action at a distance'.",
-        "demoChatContext": "New knowledge [[Quantum Entanglement]] added to your Star Map."
+        "demoChatContext": "New knowledge [[Quantum Entanglement]] added to your Star Map.",
+        "demoTabConsole": "Console",
+        "demoTabStarMap": "Star Map",
+        "demoNodeMain": "Quantum Entanglement",
+        "demoNodeChild1": "Spooky Action",
+        "demoNodeChild2": "Albert Einstein",
+        "footer": "© 2026 Constella Exploration Project."
     }
 }
