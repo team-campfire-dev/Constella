@@ -30,6 +30,11 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         }
 
+        // 🛡️ Sentinel: Limit message length to prevent DoS and memory exhaustion
+        if (message.length > 1000) {
+            return NextResponse.json({ error: 'Message is too long' }, { status: 400 });
+        }
+
         // 0. Ensure User exists in Content DB (Sync)
         await prismaContent.user.upsert({
             where: { id: userId },

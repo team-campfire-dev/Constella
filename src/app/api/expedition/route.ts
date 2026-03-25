@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
 import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 3000;
 
 /**
  * GET /api/expedition — List my expeditions (owned + member of)
@@ -77,11 +80,25 @@ export async function POST(req: NextRequest) {
 
     const userId = session.user.id;
 
+    // 🛡️ Sentinel: Apply rate limiting
+    if (!checkRateLimit('expedition_post', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: expedition_post`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     try {
         const { name, description } = await req.json();
 
         if (!name?.trim()) {
             return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+        }
+
+        // 🛡️ Sentinel: Limit input lengths to prevent DoS
+        if (name.length > 255) {
+            return NextResponse.json({ error: 'Name is too long' }, { status: 400 });
+        }
+        if (description && description.length > 1000) {
+            return NextResponse.json({ error: 'Description is too long' }, { status: 400 });
         }
 
         // Ensure user exists in content DB

@@ -84,7 +84,8 @@ export async function GET(req: NextRequest) {
                 where: {
                     channel: { startsWith: 'dm:' },
                     OR: [
-                        { channel: { contains: userId } },
+                        { channel: { startsWith: `dm:${userId}_` } },
+                        { channel: { endsWith: `_${userId}` } },
                     ],
                 },
                 orderBy: { createdAt: 'desc' },
@@ -94,7 +95,9 @@ export async function GET(req: NextRequest) {
             const channelMap = new Map<string, typeof dmMessages[0]>();
             for (const msg of dmMessages) {
                 // Verify this user is actually in the channel
-                if (!msg.channel.includes(userId)) continue;
+                const participants = msg.channel.replace('dm:', '').split('_');
+                if (!participants.includes(userId)) continue;
+
                 if (!channelMap.has(msg.channel)) {
                     channelMap.set(msg.channel, msg);
                 }
@@ -167,6 +170,11 @@ export async function POST(req: NextRequest) {
 
         if (!recipientId || !message?.trim()) {
             return NextResponse.json({ error: 'recipientId and message are required' }, { status: 400 });
+        }
+
+        // 🛡️ Sentinel: Limit message length to prevent DoS and memory exhaustion
+        if (message.length > 1000) {
+            return NextResponse.json({ error: 'Message is too long' }, { status: 400 });
         }
 
         if (recipientId === userId) {

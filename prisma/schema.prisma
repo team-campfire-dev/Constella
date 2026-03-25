@@ -45,6 +45,7 @@ model User {
   emailVerified DateTime?
   image         String?
   bio           String?   @db.Text
+  password      String?   // Hashed password for local auth
   accounts      Account[]
   sessions      Session[]
 }

@@ -19,9 +19,15 @@ export async function GET(req: NextRequest) {
 
     // 🛡️ Sentinel: Authorize channel access
     if (channel.startsWith('dm:')) {
-        if (!channel.includes(userId)) {
+        const participants = channel.replace('dm:', '').split('_');
+        if (participants.length !== 2 || !participants.includes(userId)) {
             logger.warn(`Unauthorized SSE DM access attempt: user=${userId}, channel=${channel}`);
             return new Response('Forbidden', { status: 403 });
+        }
+        const expectedChannel = `dm:${[participants[0], participants[1]].sort().join('_')}`;
+        if (channel !== expectedChannel) {
+            logger.warn(`Invalid SSE DM channel format attempt: user=${userId}, channel=${channel}`);
+            return new Response('Invalid channel format', { status: 400 });
         }
     } else if (channel.startsWith('expedition:')) {
         const expeditionId = channel.replace('expedition:', '');

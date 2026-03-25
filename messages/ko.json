@@ -32,7 +32,22 @@
         "signIn": "로그인",
         "subtitle": "우주 탐사 지식 플랫폼",
         "orContinueWith": "또는",
-        "loginFailed": "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요."
+        "loginFailed": "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.",
+        "noAccount": "아직 계정이 없으신가요?",
+        "registerLink": "회원가입"
+    },
+    "Register": {
+        "title": "새 탐험가 등록",
+        "name": "이름",
+        "email": "이메일 주소",
+        "password": "비밀번호",
+        "register": "회원가입",
+        "subtitle": "당신의 우주 탐사를 시작하세요",
+        "orContinueWith": "또는",
+        "registerFailed": "회원가입에 실패했습니다. 다른 이메일을 사용해주세요.",
+        "registerSuccess": "회원가입 성공! 로그인 중...",
+        "hasAccount": "이미 계정이 있으신가요?",
+        "loginLink": "로그인"
     },
     "Profile": {
         "title": "사용자 정보",
@@ -222,5 +237,30 @@
         "selectTopic": "토픽 선택",
         "sharedDiscoveries": "공유 발견",
         "noSharedTopics": "아직 공유된 토픽이 없습니다."
+    },
+    "Landing": {
+        "heroBadge": "Constella v1.0 출시",
+        "heroTitle": "우주의 지식을 탐험하세요",
+        "heroSubtitle": "AI와 함께 미지의 토픽을 발견하고, 나만의 별자리 지도를 만들어보세요. 다른 탐험가들과 지식의 우주를 항해할 준비가 되셨나요?",
+        "ctaPrimary": "탐험 시작하기",
+        "ctaSecondary": "로그인",
+        "featuresTitle": "핵심 탐사 기능",
+        "feature1Title": "🔭 AI 지식 탐사",
+        "feature1Desc": "통신 콘솔을 통해 AI에게 질문하고, 즉시 새로운 위키 콘텐츠를 발견하세요.",
+        "feature2Title": "✨ 별자리 지도",
+        "feature2Desc": "당신이 탐사한 지식들의 관계를 인터랙티브한 노드 그래프로 시각화합니다.",
+        "feature3Title": "👥 협동 탐사",
+        "feature3Desc": "원정대(크루)를 꾸려 발견한 지식을 공유하고 실시간으로 통신하세요.",
+        "demoTitle": "이렇게 작동합니다",
+        "demoSubtitle": "Constella에서 지식을 탐구하는 과정을 확인해보세요.",
+        "demoChatUser": "양자 얽힘이 정확히 뭐야?",
+        "demoChatAI": "양자 얽힘(Quantum Entanglement)은 두 개 이상의 입자가 아무리 멀리 떨어져 있어도 즉각적으로 서로의 상태에 영향을 미치는 물리적 현상입니다. 아인슈타인은 이를 '유령 같은 원격 작용'이라고 불렀습니다.",
+        "demoChatContext": "새로운 지식 [[양자 얽힘]]이 별자리 지도에 추가되었습니다.",
+        "demoTabConsole": "콘솔",
+        "demoTabStarMap": "별자리 지도",
+        "demoNodeMain": "양자 얽힘",
+        "demoNodeChild1": "유령 같은 원격 작용",
+        "demoNodeChild2": "알베르트 아인슈타인",
+        "footer": "© 2026 Constella Exploration Project."
     }
 }

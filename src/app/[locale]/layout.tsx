@@ -43,7 +43,7 @@ export default async function RootLayout(props: {
   return (
     <html lang={locale} suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0B0C15] text-gray-100`}
         suppressHydrationWarning
       >
         <NextIntlClientProvider messages={messages}>

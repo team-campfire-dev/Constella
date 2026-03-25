@@ -3,6 +3,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 1000;
 
 /**
  * POST /api/expedition/{id}/logs — Share a topic with the expedition
@@ -19,6 +22,12 @@ export async function POST(
 
     const { id } = await params;
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting
+    if (!checkRateLimit('expedition_log_post', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: expedition_log_post`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
 
     try {
         // Verify membership

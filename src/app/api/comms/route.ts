@@ -31,11 +31,22 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         }
 
+        // 🛡️ Sentinel: Limit message length to prevent DoS and memory exhaustion
+        if (message.length > 1000) {
+            return NextResponse.json({ error: 'Message is too long' }, { status: 400 });
+        }
+
         // 🛡️ Sentinel: Authorize channel access
         if (channel.startsWith('dm:')) {
-            if (!channel.includes(userId)) {
+            const participants = channel.replace('dm:', '').split('_');
+            if (participants.length !== 2 || !participants.includes(userId)) {
                 logger.warn(`Unauthorized Comms POST access attempt: user=${userId}, channel=${channel}`);
                 return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
+            const expectedChannel = `dm:${[participants[0], participants[1]].sort().join('_')}`;
+            if (channel !== expectedChannel) {
+                logger.warn(`Invalid DM channel format attempt: user=${userId}, channel=${channel}`);
+                return NextResponse.json({ error: 'Invalid channel format' }, { status: 400 });
             }
         } else if (channel.startsWith('expedition:')) {
             const expeditionId = channel.replace('expedition:', '');
@@ -113,9 +124,15 @@ export async function GET(req: NextRequest) {
 
     // 🛡️ Sentinel: Authorize channel access
     if (channel.startsWith('dm:')) {
-        if (!channel.includes(userId)) {
+        const participants = channel.replace('dm:', '').split('_');
+        if (participants.length !== 2 || !participants.includes(userId)) {
             logger.warn(`Unauthorized Comms GET access attempt: user=${userId}, channel=${channel}`);
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        const expectedChannel = `dm:${[participants[0], participants[1]].sort().join('_')}`;
+        if (channel !== expectedChannel) {
+            logger.warn(`Invalid DM channel format attempt: user=${userId}, channel=${channel}`);
+            return NextResponse.json({ error: 'Invalid channel format' }, { status: 400 });
         }
     } else if (channel.startsWith('expedition:')) {
         const expeditionId = channel.replace('expedition:', '');

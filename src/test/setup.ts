@@ -105,3 +105,12 @@ vi.mock('@/lib/neo4j', () => ({
         close: vi.fn(),
     })),
 }));
+
+// ─── Mock: bcryptjs ─────────────────────────────────────────────────────────
+vi.mock('bcryptjs', () => ({
+    default: {
+        hash: vi.fn((password: string) => Promise.resolve(`hashed_${password}`)),
+        compare: vi.fn((plain: string, hashed: string) =>
+            Promise.resolve(hashed === `hashed_${plain}`)),
+    },
+}));

@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
 import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 1000;
 
 /**
  * GET /api/expedition/{id} — Expedition detail
@@ -111,6 +114,12 @@ export async function PATCH(
     const { id } = await params;
     const userId = session.user.id;
 
+    // 🛡️ Sentinel: Apply rate limiting
+    if (!checkRateLimit('expedition_patch', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: expedition_patch`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     try {
         const expedition = await prismaContent.expedition.findUnique({
             where: { id },
@@ -122,8 +131,20 @@ export async function PATCH(
 
         const body = await req.json();
         const updateData: Record<string, string> = {};
-        if (body.name) updateData.name = body.name.trim();
-        if (body.description !== undefined) updateData.description = body.description?.trim() || '';
+
+        // 🛡️ Sentinel: Limit input lengths to prevent DoS
+        if (body.name) {
+            if (body.name.length > 255) {
+                return NextResponse.json({ error: 'Name is too long' }, { status: 400 });
+            }
+            updateData.name = body.name.trim();
+        }
+        if (body.description !== undefined) {
+            if (body.description && body.description.length > 1000) {
+                return NextResponse.json({ error: 'Description is too long' }, { status: 400 });
+            }
+            updateData.description = body.description?.trim() || '';
+        }
         if (body.status && ['active', 'completed', 'archived'].includes(body.status)) {
             updateData.status = body.status;
         }
