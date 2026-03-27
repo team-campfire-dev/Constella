@@ -10,10 +10,15 @@ describe('POST /api/auth/register', () => {
         vi.clearAllMocks();
     });
 
+    let reqCounter = 0;
     function makeRequest(body: Record<string, unknown>) {
+        reqCounter++;
         return new Request('http://localhost/api/auth/register', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'x-forwarded-for': `192.168.1.${reqCounter}` // unique IP per request to bypass rate limit
+            },
             body: JSON.stringify(body),
         });
     }
