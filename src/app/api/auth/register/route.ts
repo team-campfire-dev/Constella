@@ -3,8 +3,18 @@ import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
 import prismaContent from '@/lib/prisma-content';
 import logger from '@/lib/logger';
+import { checkRateLimit } from '@/lib/rate-limit';
+
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
 
 export async function POST(req: Request) {
+    // 🛡️ Sentinel: Apply rate limiting to prevent spam registration
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown-ip';
+    if (!checkRateLimit('auth_register', ip, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for IP: ${ip} on endpoint: auth_register`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     try {
         const { name, email, password } = await req.json();
 
