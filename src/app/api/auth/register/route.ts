@@ -3,9 +3,19 @@ import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
 import prismaContent from '@/lib/prisma-content';
 import logger from '@/lib/logger';
+import { checkRateLimit } from '@/lib/rate-limit';
+
+const RATE_LIMIT_WINDOW_MS = 5000; // 5 seconds per IP
 
 export async function POST(req: Request) {
     try {
+        // 🛡️ Sentinel: Apply IP-based rate limiting to prevent registration spam/brute-force
+        const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown-ip';
+        if (!checkRateLimit('auth_register', ip, RATE_LIMIT_WINDOW_MS)) {
+            logger.warn(`Registration rate limit exceeded for IP: ${ip}`);
+            return NextResponse.json({ error: 'Too many registration attempts. Please wait.' }, { status: 429 });
+        }
+
         const { name, email, password } = await req.json();
 
         if (!email || !password) {
