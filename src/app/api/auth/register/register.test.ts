@@ -10,10 +10,16 @@ describe('POST /api/auth/register', () => {
         vi.clearAllMocks();
     });
 
+    let requestCount = 0;
+
     function makeRequest(body: Record<string, unknown>) {
+        requestCount++;
         return new Request('http://localhost/api/auth/register', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'x-forwarded-for': `127.0.0.${requestCount}`,
+            },
             body: JSON.stringify(body),
         });
     }
