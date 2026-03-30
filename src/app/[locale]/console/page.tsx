@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useParams } from 'next/navigation';
 
 import ReactMarkdown from 'react-markdown';
+import { isSafeUrl } from '@/lib/url';
 import DashboardLayout from '@/components/DashboardLayout';
 import UserAvatar from '@/components/UserAvatar';
 import { useTranslations } from 'next-intl';
@@ -643,12 +644,6 @@ export default function ConsolePage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         a: ({ ...props }: any) => {
             // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
-            const isSafeUrl = (url?: string) => {
-                if (!url) return true;
-                const lowerUrl = url.trim().toLowerCase();
-                return !lowerUrl.startsWith('javascript:') && !lowerUrl.startsWith('vbscript:') && !lowerUrl.startsWith('data:');
-            };
-
             const safeHref = isSafeUrl(props.href) ? props.href : '#';
 
             return (

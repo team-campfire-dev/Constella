@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { isSafeUrl } from '@/lib/url';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 
@@ -160,12 +161,6 @@ export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscov
         a: ({ ...props }: any) => {
             // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
             // even though ChatPanel currently renders a span without href, this protects future changes
-            const isSafeUrl = (url?: string) => {
-                if (!url) return true;
-                const lowerUrl = url.trim().toLowerCase();
-                return !lowerUrl.startsWith('javascript:') && !lowerUrl.startsWith('vbscript:') && !lowerUrl.startsWith('data:');
-            };
-
             const safeHref = isSafeUrl(props.href) ? props.href : '#';
 
             return (
