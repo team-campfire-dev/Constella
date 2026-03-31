@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { isSafeUrl } from '@/lib/url';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter, Link } from '@/i18n/navigation';
 
@@ -118,12 +119,6 @@ export default function KnowledgePanel({ topicId, onClose, onNavigate }: Knowled
             }
 
             // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
-            const isSafeUrl = (url?: string) => {
-                if (!url) return true;
-                const lowerUrl = url.trim().toLowerCase();
-                return !lowerUrl.startsWith('javascript:') && !lowerUrl.startsWith('vbscript:') && !lowerUrl.startsWith('data:');
-            };
-
             const safeHref = isSafeUrl(href) ? href : '#';
 
             return <a href={safeHref} {...props} className="text-cyan-500 underline" target="_blank" rel="noopener noreferrer">{children}</a>
