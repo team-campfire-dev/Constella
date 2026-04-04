@@ -181,6 +181,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Cannot send DM to yourself' }, { status: 400 });
         }
 
+        // 🛡️ Sentinel: Verify recipient exists in Main DB before syncing to Content DB
+        const recipientExists = await prisma.user.findUnique({
+            where: { id: recipientId },
+            select: { id: true },
+        });
+
+        if (!recipientExists) {
+            return NextResponse.json({ error: 'Recipient not found' }, { status: 404 });
+        }
+
         const channel = getDmChannelId(userId, recipientId);
 
         // Ensure users exist in content DB
