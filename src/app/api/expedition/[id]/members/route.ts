@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
+import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -42,6 +43,12 @@ export async function POST(
         const { userId: targetUserId } = await req.json();
         if (!targetUserId) {
             return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+        }
+
+        // 🛡️ Sentinel: Verify target user exists in Main DB before writing to Content DB (prevent IDOR/Ghost Users)
+        const targetUserExists = await prisma.user.findUnique({ where: { id: targetUserId } });
+        if (!targetUserExists) {
+            return NextResponse.json({ error: 'Target user not found' }, { status: 404 });
         }
 
         // Ensure target user exists in content DB

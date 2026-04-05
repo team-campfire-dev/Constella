@@ -183,6 +183,12 @@ export async function POST(req: NextRequest) {
 
         const channel = getDmChannelId(userId, recipientId);
 
+        // 🛡️ Sentinel: Verify recipient exists in Main DB before writing to Content DB (prevent IDOR/Ghost Users)
+        const recipientUser = await prisma.user.findUnique({ where: { id: recipientId } });
+        if (!recipientUser) {
+            return NextResponse.json({ error: 'Recipient not found' }, { status: 404 });
+        }
+
         // Ensure users exist in content DB
         await prismaContent.user.upsert({ where: { id: userId }, create: { id: userId }, update: {} });
         await prismaContent.user.upsert({ where: { id: recipientId }, create: { id: recipientId }, update: {} });
