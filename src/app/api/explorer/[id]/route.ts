@@ -59,7 +59,7 @@ export async function GET(
         ]);
 
         // 3. Count first discoveries (topics where this user was the first to discover)
-        // We do this by checking if any ShipLog for each of this user's topics has an earlier discoveredAt
+        // 🛡️ Sentinel: N+1 OOM vulnerability fixed using groupBy and Map
         let firstDiscoveries = 0;
         if (totalDiscoveries > 0) {
             // Get all this user's shipLogs with their discoveredAt
@@ -68,16 +68,25 @@ export async function GET(
                 select: { topicId: true, discoveredAt: true }
             });
 
-            // For each, check if there's an earlier discovery by someone else
+            const topicIds = Array.from(new Set(userLogs.map(log => log.topicId)));
+
+            // Pre-compute earliest discoveries only for the topics this user has discovered
+            const earliestDiscoveries = await prismaContent.shipLog.groupBy({
+                by: ['topicId'],
+                where: { topicId: { in: topicIds } },
+                _min: { discoveredAt: true },
+            });
+
+            const earliestDiscoveryMap = new Map<string, number>();
+            for (const ed of earliestDiscoveries) {
+                if (ed._min.discoveredAt) {
+                    earliestDiscoveryMap.set(ed.topicId, ed._min.discoveredAt.getTime());
+                }
+            }
+
             for (const log of userLogs) {
-                const earlierLog = await prismaContent.shipLog.findFirst({
-                    where: {
-                        topicId: log.topicId,
-                        discoveredAt: { lt: log.discoveredAt }
-                    },
-                    select: { id: true }
-                });
-                if (!earlierLog) {
+                const earliestTime = earliestDiscoveryMap.get(log.topicId);
+                if (earliestTime !== undefined && log.discoveredAt.getTime() === earliestTime) {
                     firstDiscoveries++;
                 }
             }

@@ -99,6 +99,7 @@ async function computeMetrics(userId: string) {
     ]);
 
     // Count first discoveries (topics where this user discovered first)
+    // 🛡️ Sentinel: N+1 OOM vulnerability fixed using groupBy and Map
     let firstDiscoveries = 0;
     if (totalDiscoveries > 0) {
         const userLogs = await prismaContent.shipLog.findMany({
@@ -106,15 +107,24 @@ async function computeMetrics(userId: string) {
             select: { topicId: true, discoveredAt: true },
         });
 
+        const topicIds = Array.from(new Set(userLogs.map(log => log.topicId)));
+
+        const earliestDiscoveries = await prismaContent.shipLog.groupBy({
+            by: ['topicId'],
+            where: { topicId: { in: topicIds } },
+            _min: { discoveredAt: true },
+        });
+
+        const earliestDiscoveryMap = new Map<string, number>();
+        for (const ed of earliestDiscoveries) {
+            if (ed._min.discoveredAt) {
+                earliestDiscoveryMap.set(ed.topicId, ed._min.discoveredAt.getTime());
+            }
+        }
+
         for (const log of userLogs) {
-            const earlierLog = await prismaContent.shipLog.findFirst({
-                where: {
-                    topicId: log.topicId,
-                    discoveredAt: { lt: log.discoveredAt },
-                },
-                select: { id: true },
-            });
-            if (!earlierLog) {
+            const earliestTime = earliestDiscoveryMap.get(log.topicId);
+            if (earliestTime !== undefined && log.discoveredAt.getTime() === earliestTime) {
                 firstDiscoveries++;
             }
         }

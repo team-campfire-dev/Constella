@@ -56,11 +56,14 @@ describe('checkAndGrantAchievements', () => {
         mockedPrismaContent.commsMessage.count.mockResolvedValue(0);
 
         // ShipLog details for pioneer check
+        const mockDate = new Date();
         mockedPrismaContent.shipLog.findMany.mockResolvedValue([
-            { id: '1', topicId: 'topic-1', discoveredAt: new Date(), userId: 'user-1' },
+            { id: '1', topicId: 'topic-1', discoveredAt: mockDate, userId: 'user-1' },
         ] as any);
         // This user was first discoverer (no earlier log)
-        mockedPrismaContent.shipLog.findFirst.mockResolvedValue(null);
+        mockedPrismaContent.shipLog.groupBy.mockResolvedValue([
+            { topicId: 'topic-1', _min: { discoveredAt: mockDate } }
+        ] as any);
 
         // No existing achievements
         mockedPrismaContent.achievement.findMany.mockResolvedValue([]);
@@ -81,10 +84,13 @@ describe('checkAndGrantAchievements', () => {
         mockedPrismaContent.shipLog.count.mockResolvedValue(1);
         mockedPrismaContent.chatHistory.count.mockResolvedValue(0);
         mockedPrismaContent.commsMessage.count.mockResolvedValue(0);
+        const mockDate2 = new Date();
         mockedPrismaContent.shipLog.findMany.mockResolvedValue([
-            { id: '1', topicId: 'topic-1', discoveredAt: new Date(), userId: 'user-1' },
+            { id: '1', topicId: 'topic-1', discoveredAt: mockDate2, userId: 'user-1' },
         ] as any);
-        mockedPrismaContent.shipLog.findFirst.mockResolvedValue(null);
+        mockedPrismaContent.shipLog.groupBy.mockResolvedValue([
+            { topicId: 'topic-1', _min: { discoveredAt: mockDate2 } }
+        ] as any);
 
         // Already granted first_contact:1
         mockedPrismaContent.achievement.findMany.mockResolvedValue([
