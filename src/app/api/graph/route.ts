@@ -4,6 +4,9 @@ import logger from "@/lib/logger";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { Prisma } from '@prisma/client-content';
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 2000; // 2 seconds per request for graph
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -11,6 +14,12 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting to prevent DoS via expensive Graph DB / AI translation queries
+    if (!checkRateLimit('graph_get', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: graph_get`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
 
     try {
         const { default: prismaContent } = await import('@/lib/prisma-content');
