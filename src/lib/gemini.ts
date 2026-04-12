@@ -127,7 +127,7 @@ export async function generateWikiContent(topic: string, language: string = 'en'
         const result = await model.generateContent({
             contents,
             generationConfig: { responseMimeType: "application/json" }
-        });
+        }, { timeout: 15000 });
         const response = await result.response;
         text = response.text();
 
@@ -202,7 +202,7 @@ export const batchTranslate = async (topics: string[], targetLang: string) => {
         const result = await model.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: { responseMimeType: "application/json" }
-        });
+        }, { timeout: 15000 });
         let text = result.response.text();
         // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
         const firstBrace = text.indexOf('{');
