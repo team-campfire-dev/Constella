@@ -28,7 +28,7 @@ export function isSafeUrl(url?: string): boolean {
         // Relative paths don't have a protocol and are generally safe in this context,
         // but to be extremely cautious, we check if it starts with potentially dangerous strings
         // like javascript: or data: even if it failed parsing (e.g. malformed).
-        const lowerUrl = url.trim().toLowerCase();
+        const lowerUrl = url.replace(/\s+/g, '').toLowerCase();
 
         // Reject known dangerous protocols even if URL constructor fails
         if (
