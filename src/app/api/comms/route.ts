@@ -117,6 +117,12 @@ export async function GET(req: NextRequest) {
     }
     const userId = session.user.id;
 
+    // 🛡️ Sentinel: Apply rate limiting to prevent DoS via excessive polling
+    if (!checkRateLimit('comms_get', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: comms_get`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     const { searchParams } = new URL(req.url);
     const channel = searchParams.get('channel') || 'global';
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
