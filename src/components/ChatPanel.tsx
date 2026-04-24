@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import { isSafeUrl } from '@/lib/url';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
@@ -156,16 +156,16 @@ export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscov
     }, [handleSendMessage, input]);
 
     // Markdown renderer
-    const markdownComponents = useMemo(() => ({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        a: ({ ...props }: any) => {
+    const markdownComponents: Components = useMemo(() => ({
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        a: ({ node, href, children, ...rest }) => {
             // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
             // even though ChatPanel currently renders a span without href, this protects future changes
-            const safeHref = isSafeUrl(props.href) ? props.href : '#';
+            const safeHref = isSafeUrl(href) ? href : '#';
 
             return (
-                <span className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4" data-href={safeHref}>
-                    {props.children}
+                <span className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4" data-href={safeHref} {...rest}>
+                    {children}
                 </span>
             );
         }

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useParams } from 'next/navigation';
 
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import { isSafeUrl } from '@/lib/url';
 import DashboardLayout from '@/components/DashboardLayout';
 import UserAvatar from '@/components/UserAvatar';
@@ -69,8 +69,7 @@ const DateSeparator = ({ date }: { date: Date }) => {
 // Memoized Chat Message Item
 const ChatMessageItem = React.memo(({ msg, markdownComponents, t, isGrouped }: {
     msg: Message,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    markdownComponents: any,
+    markdownComponents: Components,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     t: any,
     isGrouped: boolean,
@@ -640,18 +639,19 @@ export default function ConsolePage() {
     }, [activeTab, handleSendMessage]);
 
     // Memoize the components map so ReactMarkdown doesn't re-render
-    const markdownComponents = useMemo(() => ({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        a: ({ ...props }: any) => {
+    const markdownComponents: Components = useMemo(() => ({
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        a: ({ node, href, children, ...rest }) => {
             // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
-            const safeHref = isSafeUrl(props.href) ? props.href : '#';
+            const safeHref = isSafeUrl(href) ? href : '#';
 
             return (
                 <span
                     className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4"
                     onClick={(e) => handleMarkdownLinkClick(e, safeHref)}
+                    {...rest}
                 >
-                    {props.children}
+                    {children}
                 </span>
             );
         }
