@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 1000;
 
 export async function GET(
     req: Request,
@@ -12,6 +15,14 @@ export async function GET(
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const currentUserId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting to prevent DoS via excessive polling
+    if (!checkRateLimit('explorer_get', currentUserId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${currentUserId} on endpoint: explorer_get`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
     }
 
     const { id } = await params;
