@@ -57,6 +57,29 @@ export async function POST(req: NextRequest) {
                 logger.warn(`Unauthorized Comms POST access attempt: user=${userId}, channel=${channel}`);
                 return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
             }
+        } else if (channel.startsWith('topic:')) {
+            const topicId = channel.replace('topic:', '');
+            // User must have discovered the topic individually or via an expedition they are a member of
+            const [personalLog, sharedLog] = await Promise.all([
+                prismaContent.shipLog.findUnique({
+                    where: { userId_topicId: { userId, topicId } }
+                }),
+                prismaContent.expeditionShipLog.findFirst({
+                    where: {
+                        topicId,
+                        expedition: {
+                            members: {
+                                some: { userId }
+                            }
+                        }
+                    }
+                })
+            ]);
+
+            if (!personalLog && !sharedLog) {
+                logger.warn(`Unauthorized Comms POST access attempt: user=${userId}, channel=${channel}`);
+                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
         }
 
         // 0. Ensure User exists in Content DB (Sync)
@@ -146,6 +169,28 @@ export async function GET(req: NextRequest) {
             where: { expeditionId_userId: { expeditionId, userId } }
         });
         if (!membership) {
+            logger.warn(`Unauthorized Comms GET access attempt: user=${userId}, channel=${channel}`);
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+    } else if (channel.startsWith('topic:')) {
+        const topicId = channel.replace('topic:', '');
+        const [personalLog, sharedLog] = await Promise.all([
+            prismaContent.shipLog.findUnique({
+                where: { userId_topicId: { userId, topicId } }
+            }),
+            prismaContent.expeditionShipLog.findFirst({
+                where: {
+                    topicId,
+                    expedition: {
+                        members: {
+                            some: { userId }
+                        }
+                    }
+                }
+            })
+        ]);
+
+        if (!personalLog && !sharedLog) {
             logger.warn(`Unauthorized Comms GET access attempt: user=${userId}, channel=${channel}`);
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }

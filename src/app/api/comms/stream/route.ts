@@ -38,6 +38,28 @@ export async function GET(req: NextRequest) {
             logger.warn(`Unauthorized SSE Expedition access attempt: user=${userId}, channel=${channel}`);
             return new Response('Forbidden', { status: 403 });
         }
+    } else if (channel.startsWith('topic:')) {
+        const topicId = channel.replace('topic:', '');
+        const [personalLog, sharedLog] = await Promise.all([
+            prismaContent.shipLog.findUnique({
+                where: { userId_topicId: { userId, topicId } }
+            }),
+            prismaContent.expeditionShipLog.findFirst({
+                where: {
+                    topicId,
+                    expedition: {
+                        members: {
+                            some: { userId }
+                        }
+                    }
+                }
+            })
+        ]);
+
+        if (!personalLog && !sharedLog) {
+            logger.warn(`Unauthorized SSE Topic access attempt: user=${userId}, channel=${channel}`);
+            return new Response('Forbidden', { status: 403 });
+        }
     }
 
     logger.info(`SSE client connected: user=${userId}, channel=${channel}`);
