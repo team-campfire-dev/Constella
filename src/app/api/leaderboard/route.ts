@@ -4,11 +4,18 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 1000;
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (!checkRateLimit('leaderboard_get', session.user.id, RATE_LIMIT_WINDOW_MS)) {
+        return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     }
 
     const { searchParams } = new URL(req.url);
