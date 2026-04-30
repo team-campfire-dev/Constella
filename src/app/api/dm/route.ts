@@ -30,6 +30,13 @@ export async function GET(req: NextRequest) {
     }
 
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting to prevent DoS via expensive DB queries triggered by GET
+    if (!checkRateLimit('dm_get', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: dm_get`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     const { searchParams } = new URL(req.url);
     const partnerId = searchParams.get('partner');
 
