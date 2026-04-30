@@ -102,6 +102,12 @@ export async function GET(_req: NextRequest) {
     }
     const userId = session.user.id;
 
+    // 🛡️ Sentinel: Apply rate limiting to prevent DoS via expensive DB queries triggered by GET
+    if (!checkRateLimit('chat_get', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: chat_get`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     try {
         const history = await prismaContent.chatHistory.findMany({
             where: { userId },
