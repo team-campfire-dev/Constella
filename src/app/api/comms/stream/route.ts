@@ -5,8 +5,11 @@ import { authOptions } from '@/lib/auth';
 import commsPubSub, { CommsEvent } from '@/lib/comms-pubsub';
 import logger from '@/lib/logger';
 import prismaContent from '@/lib/prisma-content';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
+
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window for SSE connections
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -14,8 +17,15 @@ export async function GET(req: NextRequest) {
         return new Response('Unauthorized', { status: 401 });
     }
 
-    const channel = req.nextUrl.searchParams.get('channel') || 'global';
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting to prevent DoS via excessive SSE connections
+    if (!checkRateLimit('comms_stream', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: comms_stream`);
+        return new Response('Too many requests', { status: 429 });
+    }
+
+    const channel = req.nextUrl.searchParams.get('channel') || 'global';
 
     // 🛡️ Sentinel: Authorize channel access
     if (channel.startsWith('dm:')) {
