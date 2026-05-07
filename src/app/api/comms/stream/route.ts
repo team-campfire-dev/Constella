@@ -5,8 +5,11 @@ import { authOptions } from '@/lib/auth';
 import commsPubSub, { CommsEvent } from '@/lib/comms-pubsub';
 import logger from '@/lib/logger';
 import prismaContent from '@/lib/prisma-content';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
+
+const RATE_LIMIT_WINDOW_MS = 1000;
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -16,6 +19,11 @@ export async function GET(req: NextRequest) {
 
     const channel = req.nextUrl.searchParams.get('channel') || 'global';
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Rate limit SSE connections to prevent resource exhaustion DoS
+    if (!checkRateLimit('comms_stream_get', userId, RATE_LIMIT_WINDOW_MS)) {
+        return new Response('Too many requests', { status: 429 });
+    }
 
     // 🛡️ Sentinel: Authorize channel access
     if (channel.startsWith('dm:')) {

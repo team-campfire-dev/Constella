@@ -33,6 +33,11 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const partnerId = searchParams.get('partner');
 
+    // 🛡️ Sentinel: Rate limit GET requests to prevent excessive DB polling
+    if (!checkRateLimit('dm_get', userId, RATE_LIMIT_WINDOW_MS)) {
+        return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
+
     try {
         if (partnerId) {
             // === Get DM history with a specific partner ===
