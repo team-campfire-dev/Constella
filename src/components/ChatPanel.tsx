@@ -20,6 +20,7 @@ interface ChatPanelProps {
     onClose: () => void;
     initialQuery?: string | null;
     onTopicDiscovered?: (topicId: string, topicName: string, isNew: boolean) => void;
+    onViewWiki?: (topicId: string) => void;
 }
 
 // Format wiki links into clickable spans
@@ -29,7 +30,7 @@ const formatLinks = (text: string) => {
     });
 };
 
-export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscovered }: ChatPanelProps) {
+export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscovered, onViewWiki }: ChatPanelProps) {
     const t = useTranslations('Console');
     const params = useParams();
     const locale = params.locale as string;
@@ -224,6 +225,16 @@ export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscov
                                 </div>
                             ) : (
                                 <span className="whitespace-pre-wrap">{msg.content}</span>
+                            )}
+                            {msg.role === 'assistant' && msg.topicId && onViewWiki && (
+                                <button
+                                    type="button"
+                                    onClick={() => onViewWiki(msg.topicId!)}
+                                    className="mt-2 px-2 py-1 bg-cyan-900/40 hover:bg-cyan-800/50 border border-cyan-600/40 rounded text-[10px] text-cyan-300 font-mono uppercase tracking-wider transition-colors flex items-center gap-1.5"
+                                >
+                                    <span>📖</span>
+                                    <span>{t('viewFullWiki')}</span>
+                                </button>
                             )}
                             {msg.isNew && (
                                 <div className="mt-1.5 px-1.5 py-0.5 bg-emerald-900/30 border border-emerald-600/30 rounded text-[10px] text-emerald-400 inline-block">

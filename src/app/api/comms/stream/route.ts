@@ -9,7 +9,9 @@ import { checkRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
-const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window for SSE connections
+// 합법적 SSE 재연결(strict mode 더블 effect, partner 전환, EventSource 자동 재시도)을
+// silent 429로 막던 60s 윈도우는 너무 가혹했음. DoS 보호용으로는 3s면 충분.
+const RATE_LIMIT_WINDOW_MS = 3000;
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);

@@ -136,6 +136,7 @@
         "roleAI": "AI 기록관",
         "processing": "쿼리 처리 중...",
         "connectionLost": "⚠️ 연결 끊김. 함선 AI가 오프라인입니다.",
+        "viewFullWiki": "전체 위키 보기",
         "inputPlaceholder": "질문을 입력하세요...",
         "transmit": "전송",
         "commsLive": "실시간 연결됨",

@@ -96,6 +96,11 @@ export default function StarMapWrapper() {
                 onClose={() => { setChatOpen(false); setChatQuery(null); }}
                 initialQuery={chatQuery}
                 onTopicDiscovered={handleTopicDiscovered}
+                onViewWiki={(topicId) => {
+                    setChatOpen(false);
+                    setChatQuery(null);
+                    setSelectedTopicId(topicId);
+                }}
             />
 
             {/* Crew Overlay Toggle */}

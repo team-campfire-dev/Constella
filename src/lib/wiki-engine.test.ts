@@ -14,6 +14,9 @@ vi.mock('@/lib/graph', () => ({
 vi.mock('@/lib/gemini', () => ({
     generateWikiContent: vi.fn(),
     batchTranslate: vi.fn(),
+    // Stub: 테스트에서는 항상 통과시켜 retry 분기를 타지 않도록.
+    // (validation 자체 동작은 gemini.test.ts의 evaluateWikiContent 단위 테스트에서 검증)
+    evaluateWikiContent: vi.fn(() => ({ ok: true, headings: 5, links: 10, words: 600, reasons: [] })),
 }));
 
 import prismaContent from '@/lib/prisma-content';

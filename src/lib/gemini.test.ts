@@ -15,7 +15,7 @@ vi.mock('@google/generative-ai', () => {
     };
 });
 
-const { batchTranslate, generateWikiContent } = await import('./gemini');
+const { batchTranslate, generateWikiContent, evaluateWikiContent } = await import('./gemini');
 type ChatHistoryEntry = import('./gemini').ChatHistoryEntry;
 
 
@@ -258,7 +258,9 @@ describe('generateWikiContent', () => {
     });
 
     it('잘못된 JSON 응답 시 에러', async () => {
-        mockGenerateContent.mockResolvedValueOnce({
+        // retry 3회 모두 invalid JSON → 최종 SyntaxError가 outer catch로 전달되어
+        // "AI가 올바른 JSON 형식을 반환하지 않았습니다." 메시지로 매핑된다.
+        mockGenerateContent.mockResolvedValue({
             response: { text: () => 'This is not JSON' },
         });
 
@@ -294,4 +296,48 @@ describe('generateWikiContent', () => {
         expect(result.isFollowUp).toBe(true);
     });
 
+});
+
+describe('evaluateWikiContent', () => {
+    it('빈 콘텐츠는 실패', () => {
+        const q = evaluateWikiContent('');
+        expect(q.ok).toBe(false);
+        expect(q.reasons).toContain('empty');
+    });
+
+    it('헤딩/링크/단어 수가 모두 충족되면 ok=true', () => {
+        const filler = '이것은 테스트 본문 내용을 충분히 채우기 위한 더미 단어 들이다 '.repeat(80);
+        const content = [
+            '## 개요',
+            `${filler} [[테스트A]] [[테스트B]]`,
+            '## 상세',
+            `${filler} [[링크A]], [[링크B]], [[링크C]], [[링크D]] 포함.`,
+            '## 역사',
+            `${filler} 역사 [[배경]] 설명.`,
+        ].join('\n');
+        const q = evaluateWikiContent(content);
+        expect(q.ok).toBe(true);
+        expect(q.headings).toBeGreaterThanOrEqual(3);
+        expect(q.links).toBeGreaterThanOrEqual(5);
+        expect(q.words).toBeGreaterThanOrEqual(400);
+    });
+
+    it('헤딩이 부족하면 reasons에 포함', () => {
+        const content = '평문만 있고 헤딩 없음. [[A]] [[B]] [[C]] [[D]] [[E]]';
+        const q = evaluateWikiContent(content);
+        expect(q.ok).toBe(false);
+        expect(q.reasons.some(r => r.startsWith('headings='))).toBe(true);
+    });
+
+    it('링크가 부족하면 reasons에 포함', () => {
+        const content = ['## A', '## B', '## C', '본문 단어들을 채워서 '.repeat(100)].join('\n');
+        const q = evaluateWikiContent(content);
+        expect(q.reasons.some(r => r.startsWith('links='))).toBe(true);
+    });
+
+    it('단어가 부족하면 reasons에 포함', () => {
+        const content = '## A\n## B\n## C\n짧음 [[A]] [[B]] [[C]] [[D]] [[E]]';
+        const q = evaluateWikiContent(content);
+        expect(q.reasons.some(r => r.startsWith('words='))).toBe(true);
+    });
 });

@@ -8,6 +8,10 @@ import DashboardLayout from '@/components/DashboardLayout';
 import UserAvatar from '@/components/UserAvatar';
 import { Link } from '@/i18n/navigation';
 
+function buildDmChannel(a: string, b: string): string {
+    return `dm:${[a, b].sort().join('_')}`;
+}
+
 interface DmConversation {
     channel: string;
     partner: { id: string; name: string; image: string | null };
@@ -26,6 +30,15 @@ export default function DmPage() {
     const t = useTranslations('DM');
     const searchParams = useSearchParams();
     const initialPartner = searchParams.get('partner');
+    const [myUserId, setMyUserId] = useState<string | null>(null);
+
+    // SessionProvider 미설치 환경이므로 /api/auth/session을 직접 호출 (console/page.tsx와 동일 패턴)
+    useEffect(() => {
+        fetch('/api/auth/session')
+            .then(res => res.json())
+            .then(data => { if (data?.user?.id) setMyUserId(data.user.id); })
+            .catch(() => { /* ignore */ });
+    }, []);
 
     const [conversations, setConversations] = useState<DmConversation[]>([]);
     const [selectedPartner, setSelectedPartner] = useState<string | null>(initialPartner);
@@ -67,11 +80,14 @@ export default function DmPage() {
 
     // Fetch messages for selected partner + SSE subscription
     useEffect(() => {
-        if (!selectedPartner) return;
+        if (!selectedPartner || !myUserId) return;
+
+        const abort = new AbortController();
+        const channel = buildDmChannel(myUserId, selectedPartner);
 
         const fetchMessages = async () => {
             try {
-                const res = await fetch(`/api/dm?partner=${selectedPartner}`);
+                const res = await fetch(`/api/dm?partner=${selectedPartner}`, { signal: abort.signal });
                 const json = await res.json();
                 if (json.success) {
                     setMessages(json.data.messages);
@@ -81,56 +97,39 @@ export default function DmPage() {
                     setTimeout(scrollToBottom, 100);
                 }
             } catch (err) {
+                if ((err as { name?: string }).name === 'AbortError') return;
                 console.error('Failed to fetch DM history:', err);
             }
         };
         fetchMessages();
 
-        // SSE for real-time DM
-        // We need the channel ID. We'll compute it on the server, but for SSE we need to know it.
-        // We connect to the comms stream with the dm channel
-        // The channel format is dm:{sorted userId pair}
-        const connectSSE = async () => {
-            // Get the channel from the history response
-            const res = await fetch(`/api/dm?partner=${selectedPartner}`);
-            const json = await res.json();
-            if (!json.success) return;
-
-            const channel = json.data.channel;
-
-            if (eventSourceRef.current) {
-                eventSourceRef.current.close();
+        // SSE: 채널 ID는 클라이언트에서 계산 (sorted user IDs). 별도 fetch 불필요.
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+        }
+        const es = new EventSource(`/api/comms/stream?channel=${encodeURIComponent(channel)}`);
+        es.onmessage = (event) => {
+            try {
+                const newMsg = JSON.parse(event.data);
+                setMessages(prev => {
+                    if (prev.some(m => m.id === newMsg.id)) return prev;
+                    return [...prev, newMsg];
+                });
+                setTimeout(scrollToBottom, 50);
+            } catch (e) {
+                console.error('SSE parse error:', e);
             }
-
-            const es = new EventSource(`/api/comms/stream?channel=${encodeURIComponent(channel)}`);
-            es.onmessage = (event) => {
-                try {
-                    const newMsg = JSON.parse(event.data);
-                    setMessages(prev => {
-                        if (prev.some(m => m.id === newMsg.id)) return prev;
-                        return [...prev, {
-                            ...newMsg,
-                            timestamp: newMsg.timestamp,
-                        }];
-                    });
-                    setTimeout(scrollToBottom, 50);
-                } catch (e) {
-                    console.error('SSE parse error:', e);
-                }
-            };
-
-            eventSourceRef.current = es;
         };
-
-        connectSSE();
+        eventSourceRef.current = es;
 
         return () => {
+            abort.abort();
             if (eventSourceRef.current) {
                 eventSourceRef.current.close();
                 eventSourceRef.current = null;
             }
         };
-    }, [selectedPartner, scrollToBottom]);
+    }, [selectedPartner, myUserId, scrollToBottom]);
 
     const handleSend = async () => {
         if (!input.trim() || !selectedPartner || sending) return;
@@ -147,8 +146,17 @@ export default function DmPage() {
             const json = await res.json();
             if (!json.success) {
                 setInput(text); // Restore on error
+                return;
             }
-            // Message will arrive via SSE
+            // Optimistic 추가: SSE 도착 전에 본인 메시지가 바로 보이도록.
+            // SSE가 같은 id로 다시 오면 useEffect 내 dedup이 처리.
+            if (json.data) {
+                setMessages(prev => {
+                    if (prev.some(m => m.id === json.data.id)) return prev;
+                    return [...prev, json.data];
+                });
+                setTimeout(scrollToBottom, 50);
+            }
         } catch {
             setInput(text);
         } finally {
