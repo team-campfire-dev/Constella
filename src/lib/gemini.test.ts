@@ -19,7 +19,7 @@ vi.mock('@google/genai', async (importOriginal) => {
     };
 });
 
-const { batchTranslate, generateWikiContent, evaluateWikiContent } = await import('./gemini');
+const { batchTranslate, routeQuery, generateArticleBody, evaluateWikiContent } = await import('./gemini');
 type ChatHistoryEntry = import('./gemini').ChatHistoryEntry;
 
 
@@ -98,206 +98,190 @@ describe('batchTranslate', () => {
     });
 });
 
-describe('generateWikiContent', () => {
+describe('routeQuery', () => {
     beforeEach(() => {
         mockGenerateContent.mockReset();
     });
 
-    it('정상 응답 처리 (happy path)', async () => {
-        const mockResponse = {
-            topic: 'Quantum Physics',
+    const routed = (over: Record<string, unknown> = {}) => ({
+        text: JSON.stringify({
+            intent: 'new_topic',
+            topic: '양자역학',
+            canonicalName: 'Quantum Mechanics',
             title: '양자 물리학',
-            canonicalName: 'Quantum Physics',
-            tags: ['Science', 'Physics'],
-            content: 'Quantum physics is...',
-            chatResponse: "Hello! Let's talk about quantum physics.",
-            isFollowUp: false,
-        };
-
-        mockGenerateContent.mockResolvedValueOnce({
-            text: JSON.stringify(mockResponse),
-        });
-
-        const result = await generateWikiContent('Quantum Physics', 'ko');
-        expect(result).toEqual(mockResponse);
+            tags: ['physics'],
+            chatResponse: '양자역학은 [[입자]]와 [[파동]]을 다룹니다.',
+            ...over,
+        }),
     });
 
-    it('conversationHistory 전달 시 multi-turn contents 구성', async () => {
-        const mockResponse = {
-            topic: 'Quantum Physics',
-            content: 'More details about quantum physics...',
-            chatResponse: 'Here are more details.',
-            isFollowUp: true,
-            canonicalName: 'Quantum Physics',
-            tags: ['Science'],
-        };
+    it('new_topic 응답을 그대로 매핑한다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed());
+        const r = await routeQuery('양자역학', 'ko');
 
-        mockGenerateContent.mockResolvedValueOnce({
-            text: JSON.stringify(mockResponse),
-        });
+        expect(r.intent).toBe('new_topic');
+        expect(r.topic).toBe('양자역학');
+        expect(r.canonicalName).toBe('Quantum Mechanics');
+        expect(r.title).toBe('양자 물리학');
+        expect(r.tags).toEqual(['physics']);
+        expect(r.chatResponse).toContain('[[입자]]');
+    });
 
+    it('reject면 이름 필드를 비운다 — 모델이 채워 보내도', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({
+            intent: 'reject',
+            chatResponse: '작업 수행 요청은 처리할 수 없습니다.',
+        }));
+        const r = await routeQuery('이 코드 리팩터링해줘', 'ko');
+
+        expect(r.intent).toBe('reject');
+        expect(r.canonicalName).toBe('');
+        expect(r.topic).toBe('');
+        expect(r.title).toBe('');
+        expect(r.tags).toEqual([]);
+        expect(r.chatResponse).not.toBe('');
+    });
+
+    it('follow_up이면 이름 필드를 비운다 — 참조 대상은 서버가 정한다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({ intent: 'follow_up' }));
+        const r = await routeQuery('좀 더 자세히', 'ko');
+
+        expect(r.intent).toBe('follow_up');
+        expect(r.canonicalName).toBe('');
+        expect(r.topic).toBe('');
+    });
+
+    it('모르는 intent 값은 new_topic으로 떨어뜨린다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({ intent: 'something_else' }));
+        const r = await routeQuery('양자역학', 'ko');
+        expect(r.intent).toBe('new_topic');
+    });
+
+    it('canonicalName이 비면 topic으로 대체한다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({ canonicalName: '' }));
+        const r = await routeQuery('양자역학', 'ko');
+        expect(r.canonicalName).toBe('양자역학');
+    });
+
+    it('대화 이력을 multi-turn으로 싣되 가짜 model 턴을 넣지 않는다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({ intent: 'follow_up' }));
         const history: ChatHistoryEntry[] = [
-            { role: 'user', content: '양자역학이 뭐야?' },
-            { role: 'assistant', content: '양자역학은 미시 세계의 물리학입니다.' },
+            { role: 'user', content: '양자역학' },
+            { role: 'assistant', content: '양자역학은 ...' },
         ];
+        await routeQuery('좀 더 자세히', 'ko', history);
 
-        const result = await generateWikiContent('좀 더 자세히 알려줘', 'ko', history);
+        const contents = mockGenerateContent.mock.calls[0][0].contents;
+        expect(contents).toHaveLength(3);
+        expect(contents[0]).toEqual({ role: 'user', parts: [{ text: '양자역학' }] });
+        expect(contents[1]).toEqual({ role: 'model', parts: [{ text: '양자역학은 ...' }] });
+        expect(contents[2]).toEqual({ role: 'user', parts: [{ text: '좀 더 자세히' }] });
 
-        // Verify multi-turn contents structure:
-        // [system prompt, model ack, user msg, model msg, current query]
-        const callArgs = mockGenerateContent.mock.calls[0][0];
-        const contents = callArgs.contents;
-        expect(contents.length).toBe(5); // prompt + ack + 2 history + current query
-        expect(contents[0].role).toBe('user');   // system prompt
-        expect(contents[1].role).toBe('model');  // model acknowledgment
-        expect(contents[2].role).toBe('user');   // history user msg
-        expect(contents[3].role).toBe('model');  // history assistant msg
-        expect(contents[4].role).toBe('user');   // current query
-        expect(contents[4].parts[0].text).toBe('좀 더 자세히 알려줘');
-
-        expect(result.isFollowUp).toBe(true);
+        // 지침을 끼워넣기 위한 "네, 이해했습니다" 턴이 더 이상 없어야 한다.
+        const joined = JSON.stringify(contents);
+        expect(joined).not.toContain('이해했습니다');
     });
 
-    it('conversationHistory 없으면 single-turn (기존 동작)', async () => {
-        const mockResponse = {
-            topic: 'Mars',
-            content: 'Mars is the fourth planet.',
-            chatResponse: 'Mars is fascinating!',
-            isFollowUp: false,
-        };
+    it('이력이 없으면 단일 user 턴', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed());
+        await routeQuery('양자역학', 'ko');
 
-        mockGenerateContent.mockResolvedValueOnce({
-            text: JSON.stringify(mockResponse),
-        });
-
-        const result = await generateWikiContent('Mars', 'en');
-
-        const callArgs = mockGenerateContent.mock.calls[0][0];
-        const contents = callArgs.contents;
-        expect(contents.length).toBe(1); // single prompt only
+        const contents = mockGenerateContent.mock.calls[0][0].contents;
+        expect(contents).toHaveLength(1);
         expect(contents[0].role).toBe('user');
-
-        expect(result.isFollowUp).toBe(false);
     });
 
-    it('isFollowUp 기본값은 false', async () => {
-        const mockResponse = {
-            topic: 'Biology',
-            content: 'Study of life.',
-        };
+    it('스키마·사고 레벨·시스템 지침을 config로 넘긴다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed());
+        await routeQuery('양자역학', 'ko');
 
-        mockGenerateContent.mockResolvedValueOnce({
-            text: JSON.stringify(mockResponse),
-        });
-
-        const result = await generateWikiContent('Biology', 'en');
-        expect(result.isFollowUp).toBe(false);
+        const config = mockGenerateContent.mock.calls[0][0].config;
+        expect(config.responseSchema.properties.intent.enum)
+            .toEqual(['new_topic', 'follow_up', 'reject']);
+        // required가 좁아야 follow_up/reject에서 쓰지 않을 필드에 토큰을 쓰지 않는다.
+        expect(config.responseSchema.required).toEqual(['intent', 'chatResponse']);
+        expect(config.thinkingConfig.thinkingLevel).toBeDefined();
+        expect(config.systemInstruction).toContain('위키 본문은 작성하지 않습니다');
     });
 
-    it('마크다운 코드 블록 처리', async () => {
-        const mockResponse = { topic: 'AI', content: 'Artificial Intelligence is...', isFollowUp: false };
-        mockGenerateContent.mockResolvedValueOnce({
-            text: '```json\n' + JSON.stringify(mockResponse) + '\n```',
-        });
+    it('시스템 지침이 reject와 안내를 명시적으로 가른다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed());
+        await routeQuery('양자역학', 'ko');
 
-        const result = await generateWikiContent('AI', 'en');
-        expect(result.topic).toBe('AI');
-        expect(result.content).toBe(mockResponse.content);
+        const instruction = mockGenerateContent.mock.calls[0][0].config.systemInstruction;
+        expect(instruction).toContain('안내는 new_topic의 부가 요소이지 reject의 대체재가 아닙니다');
     });
 
-    it('앞뒤 공백/개행 포함 응답 처리', async () => {
-        const mockResponse = { topic: 'Space', content: 'Space is big.' };
-        mockGenerateContent.mockResolvedValueOnce({
-            text: '\n\n  ```json\n' + JSON.stringify(mockResponse) + '\n```  \n',
-        });
-
-        const result = await generateWikiContent('Space', 'en');
-        expect(result.topic).toBe('Space');
-    });
-
-    it('배열 응답 언래핑 처리', async () => {
-        const mockResponse = [{ topic: 'Biology', content: 'Study of life.' }];
-        mockGenerateContent.mockResolvedValueOnce({
-            text: JSON.stringify(mockResponse),
-        });
-
-        const result = await generateWikiContent('Biology', 'en');
-        expect(result.topic).toBe('Biology');
-    });
-
-    it('response/result 래퍼 언래핑 처리', async () => {
-        const mockResponse = { result: { topic: 'Chemistry', content: 'Study of matter.' } };
-        mockGenerateContent.mockResolvedValueOnce({
-            text: JSON.stringify(mockResponse),
-        });
-
-        const result = await generateWikiContent('Chemistry', 'en');
-        expect(result.topic).toBe('Chemistry');
-    });
-
-    it('키 정규화 (대소문자 무시)', async () => {
-        const mockResponse = {
-            TOPIC: 'History',
-            CONTENT: 'Study of the past.',
-            CanonicalName: 'World History',
-        };
-        mockGenerateContent.mockResolvedValueOnce({
-            text: JSON.stringify(mockResponse),
-        });
-
-        const result = await generateWikiContent('History', 'en');
-        expect(result.topic).toBe('History');
-        expect(result.content).toBe('Study of the past.');
-        expect(result.canonicalName).toBe('World History');
-    });
-
-    it('필수 필드(content) 누락 시 에러', async () => {
-        mockGenerateContent.mockResolvedValueOnce({
-            text: JSON.stringify({ topic: 'Only Topic' }),
-        });
-
-        await expect(generateWikiContent('Test', 'en')).rejects.toThrow(
-            "AI 사서로부터 콘텐츠를 생성하지 못했습니다: Gemini 응답에 'content' 필드가 누락되었습니다."
+    it('JSON이 깨지면 재시도 후 에러', async () => {
+        mockGenerateContent.mockResolvedValue({ text: 'not json' });
+        await expect(routeQuery('양자역학', 'ko')).rejects.toThrow(
+            'AI 사서가 요청을 해석하지 못했습니다.'
         );
+        expect(mockGenerateContent).toHaveBeenCalledTimes(3);
+    });
+});
+
+describe('generateArticleBody', () => {
+    beforeEach(() => {
+        mockGenerateContent.mockReset();
     });
 
-    it('잘못된 JSON 응답 시 에러', async () => {
-        // retry 3회 모두 invalid JSON → 최종 SyntaxError가 outer catch로 전달되어
-        // "AI가 올바른 JSON 형식을 반환하지 않았습니다." 메시지로 매핑된다.
-        mockGenerateContent.mockResolvedValue({
-            text: 'This is not JSON',
+    const BODY = '## 개요\n양자역학은 [[입자]]를 다룬다.\n\n## 상세\n...';
+
+    it('마크다운을 그대로 반환한다 (JSON 파싱 없음)', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: BODY });
+        const body = await generateArticleBody({ canonicalName: 'Quantum Mechanics', language: 'ko' });
+        expect(body).toBe(BODY);
+    });
+
+    it('JSON 강제 설정을 넘기지 않는다 — 스트리밍 가능한 평문이어야 한다', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: BODY });
+        await generateArticleBody({ canonicalName: 'Quantum Mechanics', language: 'ko' });
+
+        const config = mockGenerateContent.mock.calls[0][0].config;
+        expect(config.responseMimeType).toBeUndefined();
+        expect(config.responseSchema).toBeUndefined();
+        expect(config.systemInstruction).toContain('마크다운 본문만 출력하세요');
+    });
+
+    it('사용자 대화 이력을 받지 않는다 — 공유 문서이므로', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: BODY });
+        await generateArticleBody({
+            canonicalName: 'Quantum Mechanics',
+            title: '양자역학',
+            tags: ['physics'],
+            language: 'ko',
         });
 
-        await expect(generateWikiContent('Test', 'en')).rejects.toThrow(
-            'AI가 올바른 JSON 형식을 반환하지 않았습니다.'
-        );
+        const contents = mockGenerateContent.mock.calls[0][0].contents;
+        expect(contents).toHaveLength(1);
+        expect(contents[0].role).toBe('user');
+        expect(contents[0].parts[0].text).toContain('Quantum Mechanics');
     });
 
-    it('코드 블록 앞뒤 텍스트 포함 응답 처리', async () => {
-        const mockResponse = { topic: 'Physics', content: 'Gravity is a force.' };
-        mockGenerateContent.mockResolvedValueOnce({
-            text: 'Here is the result:\n```json\n' + JSON.stringify(mockResponse) + '\n```\nHope this helps!',
+    it('품질 보강은 대화 이력이 아니라 단일 턴으로 전달된다', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: BODY });
+        await generateArticleBody({
+            canonicalName: 'Quantum Mechanics',
+            language: 'ko',
+            deficiency: { reasons: ['words=100<400'], previous: '너무 짧은 이전 본문' },
         });
 
-        const result = await generateWikiContent('Physics', 'en');
-        expect(result.topic).toBe('Physics');
+        const contents = mockGenerateContent.mock.calls[0][0].contents;
+        // 턴이 늘어나면 본문 생성이 다시 대화 의존적이 된다.
+        expect(contents).toHaveLength(1);
+        const text = contents[0].parts[0].text;
+        expect(text).toContain('words=100<400');
+        expect(text).toContain('너무 짧은 이전 본문');
     });
 
-    it('isFollowUp 키 정규화 (대소문자 무시)', async () => {
-        const mockResponse = {
-            topic: 'Math',
-            content: 'Mathematics is...',
-            IsFollowUp: true,
-        };
-
-        mockGenerateContent.mockResolvedValueOnce({
-            text: JSON.stringify(mockResponse),
-        });
-
-        const result = await generateWikiContent('Math', 'en');
-        expect(result.isFollowUp).toBe(true);
+    it('빈 응답이면 재시도 후 에러', async () => {
+        mockGenerateContent.mockResolvedValue({ text: '   ' });
+        await expect(
+            generateArticleBody({ canonicalName: 'Quantum Mechanics', language: 'ko' })
+        ).rejects.toThrow('위키 본문을 생성하지 못했습니다');
+        expect(mockGenerateContent).toHaveBeenCalledTimes(3);
     });
-
 });
 
 describe('evaluateWikiContent', () => {

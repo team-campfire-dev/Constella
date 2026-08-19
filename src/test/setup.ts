@@ -61,6 +61,9 @@ vi.mock('@/lib/prisma-content', () => ({
         chatHistory: {
             create: vi.fn(),
             count: vi.fn(),
+            findMany: vi.fn(),
+            // 후속질문의 참조 토픽을 서버 기록에서 찾을 때 쓴다.
+            findFirst: vi.fn(),
         },
         commsMessage: {
             findMany: vi.fn(),

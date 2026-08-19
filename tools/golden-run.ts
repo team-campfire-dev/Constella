@@ -17,17 +17,17 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import { generateWikiContent, evaluateWikiContent } from '@/lib/gemini';
+import { routeQuery, generateArticleBody, evaluateWikiContent } from '@/lib/gemini';
 import { GOLDEN_CASES, groupsOf, validateCases, type GoldenCase, type Intent } from './golden-cases.ts';
 
 // ════════════════════════════════════════════════════════════════
-// ADAPTER — 재설계 후 바꾸는 곳은 여기 하나뿐이다.
+// ADAPTER — 구현이 바뀌어도 여기 하나만 고치면 기존 베이스라인과 계속 비교된다.
 //
-// 현재(재설계 전): generateWikiContent 한 번의 호출이 분류·이름·본문·대화답변을
-// 전부 만든다. intent는 반환값에서 역산해야 한다.
+// 재설계 전에는 generateWikiContent 한 번이 분류·이름·본문·대화답변을 전부 만들었고
+// intent는 반환값에서 역산해야 했다. 지금은 routeQuery가 intent를 직접 주고 본문은
+// generateArticleBody가 따로 만든다 — 그래서 criticalPathMs와 totalMs가 갈라진다.
 //
-// 재설계 후(PR 2): routeQuery()가 intent를 직접 주고, 본문은 generateArticleBody()가
-// 따로 만든다. 그때 이 함수만 아래 주석대로 고치면 베이스라인과 계속 비교된다.
+// wiki-engine이 아니라 모델 호출 계층을 직접 부르므로 DB를 건드리지 않는다.
 // ════════════════════════════════════════════════════════════════
 
 interface Probe {
@@ -47,21 +47,31 @@ interface Probe {
 
 async function probe(c: GoldenCase): Promise<Probe> {
     const t0 = Date.now();
-    const raw = await generateWikiContent(c.query, c.language, c.history);
-    const elapsed = Date.now() - t0;
+    const routed = await routeQuery(c.query, c.language, c.history);
+    const criticalPathMs = Date.now() - t0;
 
-    // 재설계 전에는 모든 것이 한 호출이므로 임계 경로 = 전체.
-    // 재설계 후에는 criticalPathMs = 라우터 호출, totalMs = 라우터 + 본문.
+    // 본문은 new_topic일 때만 만든다. follow_up·reject에서 본문이 null이 되는 것은
+    // 회귀가 아니라 이 재설계의 목적이며, 비교기가 그렇게 분류한다.
+    let content: string | null = null;
+    if (routed.intent === 'new_topic' && routed.canonicalName) {
+        content = await generateArticleBody({
+            canonicalName: routed.canonicalName,
+            title: routed.title,
+            tags: routed.tags,
+            language: c.language,
+        });
+    }
+
     return {
-        intent: raw.topic === 'Unknown' ? 'reject' : raw.isFollowUp ? 'follow_up' : 'new_topic',
-        canonicalName: raw.canonicalName ?? '',
-        topic: raw.topic ?? '',
-        title: raw.title ?? '',
-        tags: Array.isArray(raw.tags) ? raw.tags : [],
-        chatResponse: raw.chatResponse ?? '',
-        content: raw.content ?? null,
-        criticalPathMs: elapsed,
-        totalMs: elapsed,
+        intent: routed.intent,
+        canonicalName: routed.canonicalName,
+        topic: routed.topic,
+        title: routed.title,
+        tags: routed.tags,
+        chatResponse: routed.chatResponse,
+        content,
+        criticalPathMs,
+        totalMs: Date.now() - t0,
     };
 }
 
@@ -216,7 +226,12 @@ async function observe(c: GoldenCase): Promise<Observation> {
 function aggregate(obs: Observation[], cases: GoldenCase[]): Aggregates {
     const done = obs.filter(o => o.ok);
 
-    const hard = done.filter(o => !o.soft);
+    // soft는 실행 결과가 아니라 케이스 정의의 속성이다. 저장된 관측치가 아니라
+    // 현재 정의를 기준으로 판정해야 --recompute가 정의 변경을 반영한다.
+    const softIds = new Set(cases.filter(c => c.soft).map(c => c.id));
+    const isSoft = (o: Observation) => softIds.has(o.id);
+
+    const hard = done.filter(o => !isSoft(o));
     const intentHits = hard.filter(o => o.intentMatch).length;
 
     const byKind: Record<string, { hit: number; of: number }> = {};
@@ -232,7 +247,7 @@ function aggregate(obs: Observation[], cases: GoldenCase[]): Aggregates {
         // 인접 개념까지 넣으면 그룹이 영구히 '비수렴'으로 굳어 지표가 죽는다.
         // (해당 케이스의 canonicalName 변화는 케이스별 비교에서 계속 추적된다.)
         const names = members
-            .filter(m => !m.soft)
+            .filter(m => !softIds.has(m.id))
             .map(m => done.find(o => o.id === m.id)?.canonicalKey)
             .filter((n): n is string => !!n);
         const distinct = Array.from(new Set(names));

@@ -22,7 +22,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import type { GoldenReport, Observation } from './golden-run.ts';
+import type { GoldenReport } from './golden-run.ts';
 
 const RESET = '\x1b[0m', DIM = '\x1b[2m', BOLD = '\x1b[1m';
 const RED = '\x1b[31m', GREEN = '\x1b[32m', YELLOW = '\x1b[33m', CYAN = '\x1b[36m';

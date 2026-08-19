@@ -178,8 +178,8 @@ export const GOLDEN_CASES: GoldenCase[] = [
     {
         id: 'rej-ko-gibberish', kind: 'reject',
         query: 'ㅁㄴㅇㄹ asdfqwer', language: 'ko',
-        expectIntent: 'reject', soft: true,
-        note: '무의미 입력 — reject와 "정의 불가 토픽" 사이가 원래 모호. 변화만 기록',
+        expectIntent: 'reject',
+        note: '무의미 입력. 프롬프트가 이것을 reject의 두 번째 종류로 명시하므로 더 이상 soft가 아니다',
     },
 
     // ─────────────────────────────────────────────────────────────

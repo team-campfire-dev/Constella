@@ -12,7 +12,7 @@
     "total": 30,
     "succeeded": 30,
     "failed": 0,
-    "intentAccuracy": 92.9,
+    "intentAccuracy": 93.1,
     "intentAccuracyByKind": {
       "followup": {
         "hit": 6,
@@ -23,8 +23,8 @@
         "of": 10
       },
       "reject": {
-        "hit": 2,
-        "of": 4
+        "hit": 3,
+        "of": 5
       },
       "synonym": {
         "hit": 8,

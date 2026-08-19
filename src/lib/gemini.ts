@@ -55,40 +55,7 @@ async function retryWithBackoff<T>(
     throw lastError;
 }
 
-/**
- * 배열이나 'response'/'result' 래퍼를 처리하기 위한 재귀적 언래핑
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function unwrapGeminiResponse(obj: any): any {
-    if (Array.isArray(obj)) return unwrapGeminiResponse(obj[0]);
-    if (obj && typeof obj === 'object') {
-        if ('response' in obj) return unwrapGeminiResponse(obj.response);
-        if ('result' in obj) return unwrapGeminiResponse(obj.result);
-    }
-    return obj;
-}
 
-/**
- * 키 정규화 (대소문자 무시 및 특정 키 매핑)
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeWikiResponse(obj: any): any {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const newObj: any = {};
-    for (const key in obj) {
-        const lowerKey = key.toLowerCase();
-        // 특정 키 매핑
-        if (lowerKey.includes('topic')) newObj.topic = obj[key];
-        else if (lowerKey.includes('title')) newObj.title = obj[key];
-        else if (lowerKey.includes('canonical')) newObj.canonicalName = obj[key];
-        else if (lowerKey.includes('tags')) newObj.tags = obj[key];
-        else if (lowerKey.includes('content')) newObj.content = obj[key];
-        else if (lowerKey.includes('chatresponse')) newObj.chatResponse = obj[key];
-        else if (lowerKey.includes('followup') || lowerKey.includes('follow_up')) newObj.isFollowUp = obj[key];
-        else newObj[lowerKey] = obj[key];
-    }
-    return newObj;
-}
 
 export interface WikiContentQuality {
     ok: boolean;
@@ -190,11 +157,20 @@ function routerSystemInstruction(language: string): string {
 
 # 분류 (intent)
 
-## reject — 지식 설명 요청이 아니라 '작업 수행' 요청인 경우
+## reject — 지식 항목에 대한 설명 요청이 아닌 경우. 두 종류가 있습니다.
+
+**(1) 작업 수행 요청**
 코드 작성·수정·리팩터링, 번역, 요약, 계산, 파일/포맷 변환, 도구 조작 등.
 예: "write python code" / "gitlab mermaid diagram to svg"
     "이 코드 리팩터링해줘" / "translate this to french: hello world"
-topic·canonicalName·title·tags를 만들지 마세요. chatResponse로만 답합니다.
+
+**(2) 지식 항목으로 해석할 수 없는 입력**
+무의미한 문자열, 자판을 두드린 흔적, 오타 뭉치.
+예: "ㅁㄴㅇㄹ asdfqwer" / "asdkjfhaskdjf"
+
+두 경우 모두 topic·canonicalName·title·tags를 만들지 마세요. chatResponse로만 답합니다.
+특히 "Unidentified Input", "Unknown", "Invalid Request" 같은 **가짜 토픽 이름을 지어내지 마세요.**
+존재하지 않는 개념이 저장소에 들어가면 다른 탐험가들의 별자리 지도까지 오염됩니다.
 
 ## follow_up — 직전 대화의 주제를 이어받는 질문
 예: "좀 더 자세히" / "그게 왜 중요해?" / "예시를 들어줘" / "아까 그거 관련해서"
@@ -407,147 +383,6 @@ ${req.deficiency.previous}`;
             canonicalName: req.canonicalName, language,
         });
         throw new Error("위키 본문을 생성하지 못했습니다: " + (error instanceof Error ? error.message : "Unknown Error"));
-    }
-}
-
-/**
- * 위키 콘텐츠를 생성합니다.
- *
- * @deprecated routeQuery + generateArticleBody로 대체됩니다.
- * wiki-engine 배선이 끝나면 이 함수와 unwrapGeminiResponse/normalizeWikiResponse가
- * 함께 삭제됩니다. 그때까지 빌드를 유지하기 위해 남겨둡니다.
- *
- * @param topic 주제
- * @param language 언어 코드 (기본값: 'en')
- */
-export async function generateWikiContent(topic: string, language: string = 'en', conversationHistory?: ChatHistoryEntry[]) {
-    if (!apiKey) {
-        throw new Error("API 키가 없습니다. .env 파일을 확인해주세요.");
-    }
-
-    const prompt = `
-  Role: 당신은 지식 탐구 플랫폼 "Constella"의 AI 사서입니다.
-  Task: 사용자 입력 "${topic}"에서 핵심 주제(Topic)를 추출하고, 그 주제에 대해 초보자도 이해하기 쉽게 설명해주세요.
-  Language Instruction: 답변은 반드시 **${language === 'ko' ? '한국어(Korean)' : 'English'}**로 작성해야 합니다.
-  
-  Requirements:
-  1. **Output Format**: 단일 JSON 객체로 반환하세요. 마크다운 코드 블록으로 감싸지 마세요. 배열이나 "response" 객체로 감싸지 마세요.
-  2. **Keys**: 다음의 정확한 키(camelCase)를 사용하세요:
-     - topic: 키워드 (명사).
-     - title: 현지화된 이름 (${language === 'ko' ? '한국어' : 'English'}).
-     - canonicalName: 공식 영문명 (Full Name). **반드시 해당 개념의 가장 널리 사용되는 공식 영어 명칭을 사용하세요. Wikipedia 표제어를 기준으로 삼으세요.** 예: "양자역학", "quantum physics", "quantum theory"는 모두 canonicalName = "Quantum Mechanics"로 통일해야 합니다.
-     - tags: 문자열 배열 (카테고리).
-     - content: 위키 아티클 내용 (Markdown, 객관적, [[links]] 포함).
-     - chatResponse: 대화형 답변 (Markdown, [[links]] 포함).
-     - isFollowUp: boolean. 이 질문이 이전 대화의 후속 질문인지 여부. 아래 6번 규칙을 참고하세요.
-  3. **Content (나무위키 스타일 위키 아티클)**:
-     - **구조**: 반드시 마크다운 헤딩(\`##\`, \`###\`)으로 섹션을 명확히 구분하세요. 아래 템플릿을 기본으로 하되, 주제 성격에 따라 섹션을 가감하세요(예: 인물 → 생애/업적, 작품 → 줄거리/등장인물, 과학 개념 → 원리/응용). 무관한 섹션은 억지로 채우지 말고 생략하세요.
-       1. \`## 개요\` (영문: \`## Overview\`) — 주제를 한두 문단으로 압축 정의. 첫 문장은 "X는 ~이다." 형식의 명료한 정의로 시작.
-       2. \`## 상세\` (영문: \`## Details\`) — 핵심 개념, 작동 원리, 본질적 설명을 2-3 문단으로.
-       3. \`## 역사\` 또는 \`## 배경\` (영문: \`## History\` / \`## Background\`) — 등장 배경, 발전 과정. \`### 초기\`, \`### 현대\` 등 소제목 활용 가능 (해당될 때만).
-       4. \`## 특징\` / \`## 구성\` / \`## 종류\` 중 적절한 것 (영문: \`## Features\` / \`## Components\` / \`## Types\`) — 주요 특징·구성요소·분류를 \`###\` 소제목 또는 불릿 리스트로 구조화.
-       5. \`## 영향 및 의의\` 또는 \`## 응용\` (영문: \`## Impact\` / \`## Applications\`) — 관련 분야, 실제 활용, 사회·학문적 영향.
-       6. \`## 관련 문서\` (영문: \`## See also\`) — 인접 토픽을 \`- [[토픽명]]\` 불릿 리스트로 5개 이상 나열.
-     - **분량**: 전체 600~1000단어. 각 섹션은 최소 한 문단(2-3문장) 이상. 너무 짧으면 섹션을 분리하지 말 것.
-     - **링크**: 본문 전반에 **8-15개의 [[brackets]] 링크**를 자연스럽게 배치. 과학·기술·인문·예술 등 인접 개념을 폭넓게 연결하고, \`## 관련 문서\` 섹션에 핵심 링크를 다시 모아 제시.
-     - **문체**: 객관적·중립적 백과사전 톤. 한국어는 "~이다/한다"체(평서형 종결). 인사말("안녕하세요"), 자기소개, "~에 대해 설명해드리겠습니다" 같은 메타 문구 금지. 추측이나 주관적 평가는 "~로 알려져 있다", "~로 평가된다" 형태로 출처를 암시.
-     - **언어별 섹션명**: 위 헤딩 목록의 첫 번째(한국어) 또는 두 번째(영문)를 답변 언어에 맞게 일관되게 사용. 한 문서 안에서 한국어/영어 헤딩을 섞지 말 것.
-   - **chatResponse**: 친근하고 대화체. 3개 이상의 관련 주제를 [[links]]로 포함하세요. (채팅 답변이므로 \`##\` 헤딩은 사용하지 않고 평문 1-3문단으로 작성)
-   - **Link Note**: 링크는 **개별적이고 원자적인 개념**이어야 합니다 (예: "[[인공지능 윤리]]" 대신 "[[인공지능]], [[윤리]]"). 서로 다른 개념을 하나의 링크로 합치지 마세요.
-   - **Format Warning**: 표준 마크다운 링크 문법(\`[text](url)\`, \`[text](#id)\`)을 사용하지 마세요. 내부 링크는 오직 \`[[링크]]\` 형식만 허용. 이미지·외부 URL도 삽입 금지.
-  4. **Accuracy & Hallucination Control**:
-     - 신뢰할 수 있는 지식과 문헌에 기반하여 정보를 검증하세요.
-     - 주제가 터무니없거나, 알려지지 않았거나, 모호한 경우 'chatResponse'에 명확히 정의할 수 없음을 명시하세요. 사실을 지어내지 마세요.
-  5. **Input Validation & Handling**:
-     - **Complex Sentences/Questions**: 사용자 입력이 문장인 경우(예: "양자역학이 뭐야?", "르네상스 설명해줘"), 가장 관련성 높은 명사(예: "양자역학", "르네상스")를 'topic'으로 **추출**하세요.
-     - **Rejection**: 입력이 지식 학습과 무관한 복잡한 기술 명령인 경우(예: "gitlab mermaid diagram to svg", "write python code"), 'topic'을 "Unknown"으로, 'content'를 "Invalid Request"로 설정하세요.
-     - **Guidance**: 입력이 문장이나 질문이었던 경우, 'chatResponse'에 부드러운 안내를 포함하세요: "효율적인 데이터베이스 조회를 위해 키워드 입력이 권장됩니다. 요청을 다음으로 해석했습니다: [Topic Name]." (타겟 언어로 번역).
-  6. **Follow-Up Detection (대화 맥락 연속성)**:
-     - 이전 대화 이력이 제공된 경우, 현재 질문이 이전 대화의 후속 질문인지 판단하세요.
-     - **후속 질문의 예**: "좀 더 자세히 알려줘", "다른 관점은?", "그게 왜 중요해?", "예시를 들어줘", "아까 그거 관련해서..."
-     - 후속 질문이면 **isFollowUp을 true**로, **topic/canonicalName은 이전 대화에서 다룬 주제와 동일하게** 설정하세요.
-     - 새로운 주제에 대한 질문이면 **isFollowUp을 false**로 설정하세요.
-     - 후속 질문일 때의 chatResponse는 이전 대화 맥락을 자연스럽게 이어가며 답변하세요. content(위키 아티클)도 해당 주제에 대해 정상적으로 작성하세요.
-  `;
-
-    let text = "";
-    try {
-        // Build multi-turn contents array
-        const contents: { role: string; parts: { text: string }[] }[] = [];
-
-        // Add conversation history as alternating user/model turns
-        if (conversationHistory && conversationHistory.length > 0) {
-            // System prompt as preamble in the first user turn
-            contents.push({ role: "user", parts: [{ text: prompt }] });
-            contents.push({ role: "model", parts: [{ text: "네, 위의 지침을 이해했습니다. 사용자의 질문에 JSON 형식으로 답변하겠습니다." }] });
-
-            // Add previous conversation turns (last N messages, excluding the current query)
-            for (const entry of conversationHistory) {
-                contents.push({
-                    role: entry.role === 'user' ? 'user' : 'model',
-                    parts: [{ text: entry.content }]
-                });
-            }
-
-            // Current query as the final user turn
-            contents.push({ role: "user", parts: [{ text: topic }] });
-        } else {
-            // No history: single-turn (original behavior)
-            contents.push({ role: "user", parts: [{ text: prompt }] });
-        }
-
-        let parsed = await retryWithBackoff(async () => {
-            const result = await genAI.models.generateContent({
-                model: MODEL,
-                contents,
-                config: {
-                    responseMimeType: "application/json",
-                    httpOptions: { timeout: REQUEST_TIMEOUT_MS },
-                }
-            });
-            // 이전 SDK의 response.text()는 메서드였고, 새 SDK에서는 접근자다.
-            // 응답이 차단되면 예외 대신 undefined가 오므로 빈 문자열로 떨어뜨려
-            // 아래 JSON.parse가 SyntaxError를 내게 한다 — 기존 오류 경로와 동일하게 처리된다.
-            let raw = result.text ?? "";
-
-            // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
-            const firstBrace = raw.indexOf('{');
-            const firstBracket = raw.indexOf('[');
-            const lastBrace = raw.lastIndexOf('}');
-            const lastBracket = raw.lastIndexOf(']');
-
-            const start = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
-            const end = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
-
-            if (start !== -1 && end !== -1 && start < end) {
-                raw = raw.substring(start, end + 1);
-            }
-
-            text = raw;
-            return JSON.parse(raw);
-        }, { attempts: 3, baseDelayMs: 500, label: 'gemini.generateWikiContent' });
-
-        parsed = unwrapGeminiResponse(parsed);
-        parsed = normalizeWikiResponse(parsed);
-
-        // 필수 필드 검증
-        if (!parsed.topic) throw new Error("Gemini 응답에 'topic' 필드가 누락되었습니다.");
-        if (!parsed.content) throw new Error("Gemini 응답에 'content' 필드가 누락되었습니다.");
-
-        // 기본값 보장
-        parsed.tags = parsed.tags || [];
-        parsed.canonicalName = parsed.canonicalName || parsed.topic;
-        parsed.chatResponse = parsed.chatResponse || "";
-        parsed.isFollowUp = parsed.isFollowUp === true;
-
-        return parsed as { topic: string, title?: string, canonicalName: string, tags: string[], content: string, chatResponse: string, isFollowUp: boolean };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-        logger.error("Gemini 생성 오류:", { message: error.message, stack: error.stack, rawResponse: text });
-        if (error instanceof SyntaxError) {
-            throw new Error("AI가 올바른 JSON 형식을 반환하지 않았습니다.");
-        }
-        throw new Error("AI 사서로부터 콘텐츠를 생성하지 못했습니다: " + (error.message || "Unknown Error"));
     }
 }
 

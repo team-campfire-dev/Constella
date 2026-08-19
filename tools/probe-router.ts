@@ -1,11 +1,13 @@
 import 'dotenv/config';
 import { routeQuery } from '@/lib/gemini';
 
-const cases: Array<[string, string, string, any?]> = [
+type Turn = { role: 'user' | 'assistant'; content: string };
+const cases: Array<[string, string, string, Turn[]?]> = [
     ['신규 토픽 (한국어)', '양자역학', 'ko'],
     ['문장 입력 → 안내 동반 new_topic', '르네상스에 대해 설명해줘', 'ko'],
     ['거부 ① 베이스라인 실패', '이 코드 리팩터링해줘', 'ko'],
     ['거부 ② 베이스라인 실패', 'translate this to french: hello world', 'en'],
+    ['거부 ③ 무의미 입력', 'ㅁㄴㅇㄹ asdfqwer', 'ko'],
     ['후속질문', '좀 더 자세히 알려줘', 'ko', [
         { role: 'user', content: '양자역학' },
         { role: 'assistant', content: '양자역학은 원자와 아원자 입자의 거동을 다루는 물리학 분야입니다.' },
