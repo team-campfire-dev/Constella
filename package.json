@@ -11,7 +11,9 @@
     "postinstall": "prisma generate && prisma generate --schema=prisma/content/schema.prisma",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:uat": "node --experimental-strip-types tools/uat_login.ts"
+    "test:uat": "node --experimental-strip-types tools/uat_login.ts",
+    "golden": "npx tsx tools/golden-run.ts",
+    "golden:diff": "npx tsx tools/golden-compare.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
