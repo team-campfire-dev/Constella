@@ -12,53 +12,115 @@ vi.mock('@/lib/graph', () => ({
 }));
 
 vi.mock('@/lib/gemini', () => ({
-    generateWikiContent: vi.fn(),
+    routeQuery: vi.fn(),
+    generateArticleBody: vi.fn(),
     batchTranslate: vi.fn(),
-    // Stub: 테스트에서는 항상 통과시켜 retry 분기를 타지 않도록.
-    // (validation 자체 동작은 gemini.test.ts의 evaluateWikiContent 단위 테스트에서 검증)
-    evaluateWikiContent: vi.fn(() => ({ ok: true, headings: 5, links: 10, words: 600, reasons: [] })),
+    // Stub: 기본은 항상 통과시켜 재생성 분기를 타지 않도록.
+    // (판정 로직 자체는 gemini.test.ts의 evaluateWikiContent 단위 테스트에서 검증)
+    evaluateWikiContent: vi.fn(() => ({ ok: true, headings: 5, links: 10, words: 600, reasons: [], score: 3 })),
 }));
 
 import prismaContent from '@/lib/prisma-content';
 import { withDualTransaction } from '@/lib/transaction';
-import { generateWikiContent } from '@/lib/gemini';
+import { syncArticleToGraph } from '@/lib/graph';
+import { routeQuery, generateArticleBody, evaluateWikiContent } from '@/lib/gemini';
 
 const mockedPrisma = vi.mocked(prismaContent, true);
 const mockedTransaction = vi.mocked(withDualTransaction);
-const mockedGenerateWiki = vi.mocked(generateWikiContent);
+const mockedSync = vi.mocked(syncArticleToGraph);
+const mockedRoute = vi.mocked(routeQuery);
+const mockedBody = vi.mocked(generateArticleBody);
+const mockedEvaluate = vi.mocked(evaluateWikiContent);
 
-// Helper: create a topic object for mock returns
+const FRESH = new Date();
+const STALE = new Date(Date.now() - 1000 * 60 * 60 * 24 * 200); // ~6.5개월 전
+
 function makeTopic(overrides: Record<string, any> = {}) {
-    const now = new Date();
     return {
         id: 'topic-1',
         name: 'quantum mechanics',
-        createdAt: now,
-        updatedAt: now,
+        createdAt: FRESH,
+        updatedAt: FRESH,
+        tags: [],
+        aliases: [],
         articles: [{
             id: 'art-1',
             topicId: 'topic-1',
             title: 'Quantum Mechanics',
-            content: 'Quantum mechanics is the study of...',
+            content: '## Overview\nQuantum mechanics is the study of...',
             language: 'en',
-            updatedAt: now,
+            updatedAt: FRESH,
         }],
-        aliases: [],
         ...overrides,
     };
 }
 
-// Helper: make withDualTransaction pass through to the callback
+/**
+ * 이름 -> 토픽 저장소. findUnique가 여기를 본다.
+ * 트랜잭션 목이 여기에 새 토픽을 등록하므로, ④가 만든 토픽을 ⑤가 조회할 수 있다.
+ */
+let topicStore: Record<string, any> = {};
+
+function mockTopicsByName(byName: Record<string, any>) {
+    topicStore = byName;
+    mockedPrisma.topic.findUnique.mockImplementation((args: any) =>
+        Promise.resolve(topicStore[args?.where?.name] ?? null) as any
+    );
+}
+
 function setupDualTransaction() {
-    mockedTransaction.mockImplementation(async (callback) => {
-        const mockPrismaTx = {
-            topic: { upsert: vi.fn().mockResolvedValue({ id: 'topic-new', name: 'new topic' }) },
+    mockedTransaction.mockImplementation(async (callback: any) => {
+        const prismaTx = {
+            topic: {
+                upsert: vi.fn().mockImplementation(async (args: any) => {
+                    const name = args?.where?.name;
+                    const created = { id: 'topic-new', name };
+                    // 실제 트랜잭션처럼 저장소에 반영한다. 본문 없는 스텁 상태.
+                    topicStore[name] = {
+                        ...created, tags: [], aliases: [],
+                        articles: [{
+                            id: 'art-new', topicId: 'topic-new', title: 'T',
+                            content: null, language: 'en', updatedAt: FRESH,
+                        }],
+                    };
+                    return created;
+                }),
+            },
             wikiArticle: { upsert: vi.fn() },
             alias: { upsert: vi.fn() },
         };
-        const mockNeo4jTx = { run: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
-        return callback(mockPrismaTx as any, mockNeo4jTx as any);
+        const neo4jTx = { run: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
+        return callback(prismaTx as any, neo4jTx as any);
     });
+}
+
+/** 라우터 기본 응답 */
+function routerResult(over: Record<string, any> = {}) {
+    return {
+        intent: 'new_topic',
+        chatResponse: '양자역학은 [[입자]]를 다룹니다.',
+        topic: 'Quantum Mechanics',
+        canonicalName: 'Quantum Mechanics',
+        title: '양자역학',
+        tags: ['physics'],
+        ...over,
+    } as any;
+}
+
+/** fire-and-forget으로 띄운 백그라운드 작업이 진행되도록 이벤트 루프를 한 바퀴 돌린다. */
+const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+function baseMocks() {
+    mockedPrisma.alias.findUnique.mockResolvedValue(null as any);
+    mockedPrisma.alias.findMany.mockResolvedValue([] as any);
+    mockedPrisma.alias.upsert.mockResolvedValue({} as any);
+    mockedPrisma.topic.findMany.mockResolvedValue([] as any);
+    mockedPrisma.user.upsert.mockResolvedValue({} as any);
+    mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
+    mockedPrisma.chatHistory.findFirst.mockResolvedValue(null as any);
+    mockedEvaluate.mockReturnValue({ ok: true, headings: 5, links: 10, words: 600, reasons: [], score: 3 });
+    mockedBody.mockResolvedValue('## Overview\n생성된 본문 [[입자]]');
+    setupDualTransaction();
 }
 
 describe('processUserQuery', () => {
@@ -66,422 +128,300 @@ describe('processUserQuery', () => {
 
     beforeEach(async () => {
         vi.clearAllMocks();
-        // Dynamic import to get a fresh module with mocks applied
-        const mod = await import('@/lib/wiki-engine');
-        processUserQuery = mod.processUserQuery;
+        vi.resetModules();
+        baseMocks();
+        processUserQuery = (await import('@/lib/wiki-engine')).processUserQuery;
     });
 
-    // ─── 1. 캐시 히트 (기존 Topic이 존재하고 최신) ─────────────────────────
+    // ─── ① 사전 조회: 모델을 부르지 않는 경로 ─────────────────────────────
 
-    it('기존 Topic이 최신이면 캐시된 콘텐츠 반환 (Gemini 미호출)', async () => {
-        const topic = makeTopic();
-        mockedPrisma.topic.findUnique.mockResolvedValue(topic as any);
-
-        // shipLog/user mocks
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
+    it('사전 조회가 신선한 본문을 찾으면 라우터를 호출하지 않는다', async () => {
+        mockTopicsByName({ 'quantum mechanics': makeTopic() });
 
         const result = await processUserQuery('user-1', 'Quantum Mechanics', 'en');
 
-        expect(result.isNew).toBe(false);
+        expect(mockedRoute).not.toHaveBeenCalled();
+        expect(mockedBody).not.toHaveBeenCalled();
         expect(result.topicId).toBe('topic-1');
-        expect(result.content).toContain('Quantum mechanics is the study of');
+        expect(result.isNew).toBe(false);
         expect(result.answer).toContain('ARCHIVE RETRIEVED');
-
-        // Gemini should NOT have been called
-        expect(mockedGenerateWiki).not.toHaveBeenCalled();
     });
 
-    // ─── 2. Case-insensitive 검색 ────────────────────────────────────────
-
-    it('대소문자가 다른 alias로 기존 Topic을 찾는다', async () => {
-        // First lookup by name: not found
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        // Second lookup: alias (case-insensitive)
-        const topic = makeTopic();
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce({
-            id: 'alias-1',
-            name: 'quantum mechanics',
-            topicId: 'topic-1',
-            topic,
-        } as any);
-
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
-
-        const result = await processUserQuery('user-1', 'Quantum Mechanics', 'en');
-
-        // Should have called alias.findUnique with lowercased name
-        expect(mockedPrisma.alias.findUnique).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { name: 'quantum mechanics' }
-            })
-        );
-        expect(result.isNew).toBe(false);
-        expect(result.topicId).toBe('topic-1');
-    });
-
-    // ─── 3. Fuzzy 사전 조회 ──────────────────────────────────────────────
-
-    it('정확 일치 실패 시 fuzzy 검색으로 유사 Topic을 찾는다', async () => {
-        // Exact name lookup: not found
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        // Alias exact lookup: not found
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
-        // Fuzzy topic search: found
-        const topic = makeTopic({ name: 'quantum mechanics' });
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([topic] as any);
-
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
-
-        const result = await processUserQuery('user-1', 'quantum', 'en');
-
-        expect(mockedPrisma.topic.findMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: expect.objectContaining({
-                    OR: expect.arrayContaining([
-                        expect.objectContaining({ name: { contains: 'quantum' } }),
-                    ])
-                })
-            })
-        );
-        expect(result.isNew).toBe(false);
-        expect(result.topicId).toBe('topic-1');
-    });
-
-    it('topic fuzzy 실패 시 alias fuzzy 검색으로 찾는다', async () => {
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
-        // Topic fuzzy: empty
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        // Alias fuzzy: found
-        const topic = makeTopic();
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([{
-            id: 'alias-2',
-            name: 'quantum theory',
-            topicId: 'topic-1',
-            topic,
-        }] as any);
-
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
-
-        const result = await processUserQuery('user-1', 'quantum', 'en');
-
-        expect(result.isNew).toBe(false);
-        expect(result.topicId).toBe('topic-1');
-    });
-
-    it('짧은 쿼리 (2자 미만)는 fuzzy 검색을 건너뜀', async () => {
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
-
-        // Gemini generates content
-        mockedGenerateWiki.mockResolvedValueOnce({
-            topic: 'AI',
-            canonicalName: 'Artificial Intelligence',
-            title: 'Artificial Intelligence',
-            tags: ['Technology'],
-            content: 'AI is...',
-            chatResponse: 'Let me tell you about AI.',
-            isFollowUp: false,
-        });
-
-        // Post-gen dedup: not found
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-
-        // Transaction setup
-        setupDualTransaction();
-
-        // KeywordCache refresh mocks (topic.findMany for cache, alias.findMany for cache)
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
-
-        // ShipLog
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
-
-        const result = await processUserQuery('user-1', 'AI', 'en');
-
-        // Fuzzy findMany should NOT have been called (query length < 3)
-        // But it may have been called for KeywordCache, so check the actual args
-        expect(result.isNew).toBe(true);
-    });
-
-    // ─── 4. Post-Generation 중복 검사 ────────────────────────────────────
-
-    it('Gemini 호출 후 canonicalName으로 기존 Topic 발견 시 캐시 반환', async () => {
-        // All lookups fail -> needs generation
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
-
-        // Gemini returns a canonical name that exists in DB
-        mockedGenerateWiki.mockResolvedValueOnce({
-            topic: '양자역학',
-            canonicalName: 'Quantum Mechanics',
-            title: '양자역학',
-            tags: ['Physics'],
-            content: 'Content about quantum...',
-            chatResponse: 'Response about quantum...',
-            isFollowUp: false,
-        });
-
-        // Post-generation dedup check: findUnique with canonicalName finds existing topic
-        const existingTopic = makeTopic();
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(existingTopic as any);
-
-        // Alias upsert + ShipLog
-        mockedPrisma.alias.upsert.mockResolvedValue({} as any);
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
+    it('별칭으로도 사전 조회에 성공한다', async () => {
+        mockTopicsByName({});
+        mockedPrisma.alias.findUnique.mockResolvedValue({ topic: makeTopic() } as any);
 
         const result = await processUserQuery('user-1', '양자역학', 'en');
 
-        // Should use cached content, NOT trigger the dual transaction
-        expect(result.isNew).toBe(false);
+        expect(mockedRoute).not.toHaveBeenCalled();
         expect(result.topicId).toBe('topic-1');
-        expect(result.answer).toContain('ARCHIVE RETRIEVED');
-        expect(mockedTransaction).not.toHaveBeenCalled();
     });
 
-    it('Post-gen dedup: 기존 Topic의 article이 오래된 경우 재생성 진행', async () => {
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
+    it('정확 일치가 없으면 fuzzy 검색으로 찾는다', async () => {
+        mockTopicsByName({});
+        mockedPrisma.topic.findMany.mockResolvedValue([makeTopic()] as any);
 
-        mockedGenerateWiki.mockResolvedValueOnce({
-            topic: 'Gravity',
-            canonicalName: 'Gravity',
-            title: 'Gravity',
-            tags: ['Physics'],
-            content: 'Gravity is a fundamental force.',
-            chatResponse: 'Let me explain gravity.',
-            isFollowUp: false,
-        });
+        const result = await processUserQuery('user-1', 'quantum mechanic', 'en');
 
-        // Post-gen dedup: topic exists but article is old (4 months ago)
-        const fourMonthsAgo = new Date();
-        fourMonthsAgo.setMonth(fourMonthsAgo.getMonth() - 4);
-        const staleTopicResult = makeTopic({
-            name: 'gravity',
-            articles: [{
-                id: 'art-old',
-                topicId: 'topic-1',
-                content: 'Old content',
-                language: 'en',
-                updatedAt: fourMonthsAgo,
-            }],
-        });
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(staleTopicResult as any);
-
-        // This should proceed to generation (withDualTransaction)
-        setupDualTransaction();
-
-        // KeywordCache refresh
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
-
-        // ShipLog
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
-
-        const result = await processUserQuery('user-1', 'Gravity', 'en');
-
-        // Should proceed with generation
-        expect(result.isNew).toBe(true);
-        expect(mockedTransaction).toHaveBeenCalled();
+        expect(mockedRoute).not.toHaveBeenCalled();
+        expect(result.topicId).toBe('topic-1');
     });
 
-    // ─── 5. Unknown 주제 처리 ────────────────────────────────────────────
+    it('2자 이하 쿼리는 fuzzy 검색을 건너뛴다', async () => {
+        mockTopicsByName({});
+        mockedRoute.mockResolvedValue(routerResult());
 
-    it('"Unknown" 주제로 판별되면 DB 저장 없이 답변만 반환', async () => {
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
+        await processUserQuery('user-1', 'qm', 'en');
 
-        mockedGenerateWiki.mockResolvedValueOnce({
-            topic: 'Unknown',
-            canonicalName: 'Unknown',
-            title: 'Unknown',
-            tags: [],
-            content: 'Invalid Request',
-            chatResponse: 'I cannot process this request.',
-            isFollowUp: false,
+        expect(mockedPrisma.topic.findMany).not.toHaveBeenCalled();
+        expect(mockedRoute).toHaveBeenCalled();
+    });
+
+    it('본문 없는 스텁은 캐시 히트가 아니다', async () => {
+        const stub = makeTopic({
+            articles: [{ id: 'a', topicId: 'topic-1', title: 'T', content: null, language: 'en', updatedAt: FRESH }],
         });
+        mockTopicsByName({ 'quantum mechanics': stub });
+        mockedRoute.mockResolvedValue(routerResult());
 
-        const result = await processUserQuery('user-1', 'write python code', 'en');
+        await processUserQuery('user-1', 'Quantum Mechanics', 'en');
+
+        expect(mockedRoute).toHaveBeenCalled();
+    });
+
+    it('낡은 본문은 캐시 히트가 아니다', async () => {
+        const stale = makeTopic({
+            articles: [{ id: 'a', topicId: 'topic-1', title: 'T', content: '## Old', language: 'en', updatedAt: STALE }],
+        });
+        mockTopicsByName({ 'quantum mechanics': stale });
+        mockedRoute.mockResolvedValue(routerResult());
+
+        await processUserQuery('user-1', 'Quantum Mechanics', 'en');
+
+        expect(mockedRoute).toHaveBeenCalled();
+    });
+
+    // ─── ② 라우터 분기 ──────────────────────────────────────────────────
+
+    it('reject면 아무것도 저장하지 않고 답변만 돌려준다', async () => {
+        mockTopicsByName({});
+        mockedRoute.mockResolvedValue(routerResult({
+            intent: 'reject', chatResponse: '작업 요청은 처리할 수 없습니다.',
+            topic: '', canonicalName: '', title: '', tags: [],
+        }));
+
+        const result = await processUserQuery('user-1', '이 코드 리팩터링해줘', 'ko');
 
         expect(result.topicId).toBe('');
         expect(result.isNew).toBe(false);
         expect(mockedTransaction).not.toHaveBeenCalled();
+        expect(mockedPrisma.shipLog.upsert).not.toHaveBeenCalled();
+        await flush();
+        expect(mockedBody).not.toHaveBeenCalled();
     });
 
-    // ─── 6. Alias 저장 정규화 ────────────────────────────────────────────
+    it('follow_up은 서버가 기억한 직전 토픽을 쓰고 본문을 건드리지 않는다', async () => {
+        mockTopicsByName({});
+        mockedPrisma.chatHistory.findFirst.mockResolvedValue({ topicId: 'topic-prev' } as any);
+        mockedRoute.mockResolvedValue(routerResult({
+            intent: 'follow_up', topic: '', canonicalName: '', title: '', tags: [],
+        }));
 
-    it('Post-gen dedup에서 alias는 lowercase로 저장된다', async () => {
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
+        const result = await processUserQuery('user-1', '좀 더 자세히', 'ko');
 
-        mockedGenerateWiki.mockResolvedValueOnce({
-            topic: 'Black Hole',
-            canonicalName: 'Black Hole',
-            title: 'Black Hole',
-            tags: ['Astronomy'],
-            content: 'A black hole is...',
-            chatResponse: 'Black holes are fascinating!',
-            isFollowUp: false,
-        });
-
-        // Post-gen check: canonical topic exists with fresh content
-        const existingTopic = makeTopic({
-            id: 'topic-bh',
-            name: 'black hole',
-        });
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(existingTopic as any);
-
-        mockedPrisma.alias.upsert.mockResolvedValue({} as any);
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
-
-        // Query with mixed case — alias should be stored lowercase
-        await processUserQuery('user-1', 'BLACK HOLE phenomenon', 'en');
-
-        // Verify alias.upsert was called with lowercase name
-        if (mockedPrisma.alias.upsert.mock.calls.length > 0) {
-            const aliasCall = mockedPrisma.alias.upsert.mock.calls[0][0] as any;
-            expect(aliasCall.where.name).toBe(aliasCall.where.name.toLowerCase());
-            expect(aliasCall.create.name).toBe(aliasCall.create.name.toLowerCase());
-        }
+        expect(result.topicId).toBe('topic-prev');
+        expect(mockedTransaction).not.toHaveBeenCalled();
+        expect(mockedPrisma.shipLog.upsert).toHaveBeenCalled();
+        await flush();
+        expect(mockedBody).not.toHaveBeenCalled();
     });
 
-    // ─── 7. ShipLog 업데이트 ─────────────────────────────────────────────
+    it('follow_up인데 직전 기록이 없으면 답변만 돌려준다', async () => {
+        mockTopicsByName({});
+        mockedPrisma.chatHistory.findFirst.mockResolvedValue(null as any);
+        mockedRoute.mockResolvedValue(routerResult({
+            intent: 'follow_up', topic: '', canonicalName: '', title: '', tags: [],
+        }));
 
-    it('캐시 히트 시에도 ShipLog가 업데이트된다', async () => {
-        const topic = makeTopic();
-        mockedPrisma.topic.findUnique.mockResolvedValue(topic as any);
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
+        const result = await processUserQuery('user-1', '좀 더 자세히', 'ko');
 
-        await processUserQuery('user-1', 'Quantum Mechanics', 'en');
+        expect(result.topicId).toBe('');
+        expect(mockedTransaction).not.toHaveBeenCalled();
+    });
 
-        expect(mockedPrisma.user.upsert).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { id: 'user-1' },
-            })
-        );
-        expect(mockedPrisma.shipLog.upsert).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { userId_topicId: { userId: 'user-1', topicId: 'topic-1' } },
-            })
+    // ─── ③ canonical 재조회 ─────────────────────────────────────────────
+
+    it('canonicalName으로 기존 토픽을 찾으면 본문을 만들지 않는다', async () => {
+        // 사전 조회는 실패, canonical 조회는 성공하는 동의어 상황
+        mockTopicsByName({ 'quantum mechanics': makeTopic() });
+        mockedRoute.mockResolvedValue(routerResult());
+
+        const result = await processUserQuery('user-1', 'quantum physics', 'en');
+
+        expect(result.topicId).toBe('topic-1');
+        expect(result.isNew).toBe(false);
+        expect(mockedTransaction).not.toHaveBeenCalled();
+        await flush();
+        expect(mockedBody).not.toHaveBeenCalled();
+        // 다음부터는 사전 조회에서 잡히도록 별칭을 남긴다
+        expect(mockedPrisma.alias.upsert).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { name: 'quantum physics' } })
         );
     });
 
-    // ─── 8. ShipLog 에러 내성 ────────────────────────────────────────────
+    // ─── ④ 신규 생성 + ⑤ 백그라운드 ────────────────────────────────────
 
-    it('ShipLog 업데이트 실패해도 결과는 정상 반환', async () => {
-        const topic = makeTopic();
-        mockedPrisma.topic.findUnique.mockResolvedValue(topic as any);
-        mockedPrisma.user.upsert.mockRejectedValue(new Error('DB Error'));
+    it('본문 생성을 기다리지 않고 응답한다', async () => {
+        mockTopicsByName({});
+        mockedRoute.mockResolvedValue(routerResult());
+
+        // 끝나지 않는 본문 생성. 이걸 기다린다면 processUserQuery도 끝나지 않는다.
+        let release: (body: string) => void = () => { };
+        mockedBody.mockReturnValue(new Promise<string>(resolve => { release = resolve; }));
+
+        const result = await processUserQuery('user-1', 'quantum mechanics', 'en');
+
+        expect(result.isNew).toBe(true);
+        expect(result.topicId).toBe('topic-new');
+        expect(result.answer).toContain('[[입자]]');
+        expect(mockedBody).toHaveBeenCalledTimes(1);
+
+        release('## Overview\n[[입자]]');
+        await flush();
+    });
+
+    it('④에서 Neo4j 노드를 먼저 만든다 — 엣지 없이', async () => {
+        mockTopicsByName({});
+        mockedRoute.mockResolvedValue(routerResult());
+
+        await processUserQuery('user-1', 'quantum mechanics', 'en');
+
+        // 노드가 없으면 /api/graph의 MATCH가 비어 새 별이 아예 뜨지 않는다.
+        expect(mockedSync).toHaveBeenCalledWith(
+            expect.anything(), 'quantum mechanics', [], ['physics'], 'topic-new'
+        );
+    });
+
+    it('ShipLog 실패가 응답을 막지 않는다', async () => {
+        mockTopicsByName({ 'quantum mechanics': makeTopic() });
+        mockedPrisma.shipLog.upsert.mockRejectedValue(new Error('DB down'));
 
         const result = await processUserQuery('user-1', 'Quantum Mechanics', 'en');
 
-        // Result should still be returned despite ShipLog error
-        expect(result.isNew).toBe(false);
         expect(result.topicId).toBe('topic-1');
     });
+});
 
-    // ─── 9. 후속 질문 경량 경로 (isFollowUp) ─────────────────────────────
+describe('ensureArticle', () => {
+    let ensureArticle: typeof import('@/lib/wiki-engine').ensureArticle;
 
-    it('isFollowUp=true일 때 기존 Topic 반환, withDualTransaction 미호출', async () => {
-        // All lookups fail -> needs generation
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
-
-        // Gemini returns isFollowUp: true
-        mockedGenerateWiki.mockResolvedValueOnce({
-            topic: 'Quantum Mechanics',
-            canonicalName: 'Quantum Mechanics',
-            title: '양자역학',
-            tags: ['Physics'],
-            content: 'More about quantum mechanics...',
-            chatResponse: '네, 양자역학에 대해 더 자세히 알려드릴게요.',
-            isFollowUp: true,
-        });
-
-        // Follow-up topic lookup: found existing topic
-        const existingTopic = makeTopic();
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(existingTopic as any);
-
-        // ShipLog
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
-
-        const chatHistory = [
-            { role: 'user' as const, content: '양자역학이 뭐야?' },
-            { role: 'assistant' as const, content: '양자역학은 미시 세계의 물리학입니다.' },
-        ];
-
-        const result = await processUserQuery('user-1', '좀 더 자세히 알려줘', 'en', chatHistory);
-
-        // Should NOT trigger dual transaction (no wiki update)
-        expect(mockedTransaction).not.toHaveBeenCalled();
-        expect(result.isNew).toBe(false);
-        expect(result.topicId).toBe('topic-1');
-        // chatResponse should be used as answer (after markdown normalization)
-        expect(result.answer).toContain('양자역학에 대해 더 자세히');
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        vi.resetModules();
+        baseMocks();
+        ensureArticle = (await import('@/lib/wiki-engine')).ensureArticle;
     });
 
-    it('isFollowUp=true이지만 DB에 Topic 없으면 정상 생성 경로로 폴스루', async () => {
-        // All lookups fail
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.alias.findUnique.mockResolvedValueOnce(null);
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
+    it('본문이 이미 신선하면 모델을 부르지 않는다', async () => {
+        mockTopicsByName({ 'quantum mechanics': makeTopic() });
 
-        // Gemini returns isFollowUp: true, but topic doesn't exist in DB
-        mockedGenerateWiki.mockResolvedValueOnce({
-            topic: 'Dark Matter',
-            canonicalName: 'Dark Matter',
-            title: 'Dark Matter',
-            tags: ['Astrophysics'],
-            content: 'Dark matter is...',
-            chatResponse: 'Let me explain dark matter.',
-            isFollowUp: true,
+        const body = await ensureArticle('Quantum Mechanics', 'en');
+
+        expect(mockedBody).not.toHaveBeenCalled();
+        expect(body).toContain('Quantum mechanics is the study of');
+    });
+
+    it('동시에 두 번 불려도 생성은 한 번만 돈다', async () => {
+        const stub = makeTopic({
+            articles: [{ id: 'a', topicId: 'topic-1', title: 'T', content: null, language: 'en', updatedAt: FRESH }],
         });
+        mockTopicsByName({ 'quantum mechanics': stub });
 
-        // Follow-up topic lookup: NOT found
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-
-        // Post-gen dedup: also not found
-        mockedPrisma.topic.findUnique.mockResolvedValueOnce(null);
-
-        // Should fall through to full generation
-        setupDualTransaction();
-
-        // KeywordCache refresh
-        mockedPrisma.topic.findMany.mockResolvedValueOnce([]);
-        mockedPrisma.alias.findMany.mockResolvedValueOnce([]);
-
-        // ShipLog
-        mockedPrisma.user.upsert.mockResolvedValue({} as any);
-        mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
-
-        const result = await processUserQuery('user-1', '아까 그거 뭐였지', 'en', [
-            { role: 'user' as const, content: 'dark matter' },
-            { role: 'assistant' as const, content: 'Some response about dark matter.' },
+        // 채팅의 백그라운드 생성과 위키 열람이 겹치는 상황
+        const [a, b] = await Promise.all([
+            ensureArticle('Quantum Mechanics', 'en'),
+            ensureArticle('quantum mechanics', 'en'),
         ]);
 
-        // Should proceed with full generation since topic wasn't found
-        expect(result.isNew).toBe(true);
-        expect(mockedTransaction).toHaveBeenCalled();
+        expect(mockedBody).toHaveBeenCalledTimes(1);
+        expect(a).toBe(b);
+    });
+
+    it('실패하면 in-flight에서 빠져 다음 호출이 다시 시도한다', async () => {
+        const stub = makeTopic({
+            articles: [{ id: 'a', topicId: 'topic-1', title: 'T', content: null, language: 'en', updatedAt: FRESH }],
+        });
+        mockTopicsByName({ 'quantum mechanics': stub });
+        mockedBody.mockRejectedValueOnce(new Error('model down'));
+
+        await expect(ensureArticle('Quantum Mechanics', 'en')).rejects.toThrow('model down');
+
+        mockedBody.mockResolvedValueOnce('## Overview\n다시 만든 본문 [[입자]]');
+        const body = await ensureArticle('Quantum Mechanics', 'en');
+
+        expect(body).toContain('다시 만든 본문');
+        expect(mockedBody).toHaveBeenCalledTimes(2);
+    });
+
+    it('품질 미달이면 1회 재생성하되 대화 이력이 아니라 deficiency로 알린다', async () => {
+        const stub = makeTopic({
+            articles: [{ id: 'a', topicId: 'topic-1', title: 'T', content: null, language: 'en', updatedAt: FRESH }],
+        });
+        mockTopicsByName({ 'quantum mechanics': stub });
+        mockedEvaluate
+            .mockReturnValueOnce({ ok: false, headings: 1, links: 2, words: 100, reasons: ['words=100<300'], score: 0.9 })
+            .mockReturnValueOnce({ ok: true, headings: 5, links: 10, words: 700, reasons: [], score: 3 });
+        mockedBody
+            .mockResolvedValueOnce('짧은 본문')
+            .mockResolvedValueOnce('## Overview\n충분히 긴 본문 [[입자]]');
+
+        const body = await ensureArticle('Quantum Mechanics', 'en');
+
+        expect(mockedBody).toHaveBeenCalledTimes(2);
+        expect(mockedBody.mock.calls[1][0]).toMatchObject({
+            deficiency: { reasons: ['words=100<300'], previous: '짧은 본문' },
+        });
+        expect(body).toContain('충분히 긴 본문');
+    });
+
+    it('재생성이 길기만 하고 구조가 퇴행하면 채택하지 않는다', async () => {
+        const stub = makeTopic({
+            articles: [{ id: 'a', topicId: 'topic-1', title: 'T', content: null, language: 'en', updatedAt: FRESH }],
+        });
+        mockTopicsByName({ 'quantum mechanics': stub });
+        // 첫 결과: 분량만 살짝 모자람. 재생성: 단어는 늘었지만 헤딩·링크가 무너짐.
+        // 단어 수만 비교하던 옛 기준이라면 두 번째가 이겼다.
+        mockedEvaluate
+            .mockReturnValueOnce({ ok: false, headings: 6, links: 20, words: 480, reasons: ['words=480<500'], score: 2.96 })
+            .mockReturnValueOnce({ ok: false, headings: 1, links: 2, words: 900, reasons: ['headings=1<3', 'links=2<5'], score: 1.73 });
+        mockedBody
+            .mockResolvedValueOnce('## Overview\n구조는 좋지만 조금 짧은 본문 [[입자]]')
+            .mockResolvedValueOnce('장황하지만 구조가 무너진 본문');
+
+        const body = await ensureArticle('Quantum Mechanics', 'en');
+
+        expect(body).toContain('구조는 좋지만');
+        expect(body).not.toContain('장황하지만');
+    });
+
+    it('본문 저장 후 [[링크]]를 엣지로 동기화한다', async () => {
+        const stub = makeTopic({
+            tags: [{ id: 't1', name: 'physics' }],
+            articles: [{ id: 'a', topicId: 'topic-1', title: 'T', content: null, language: 'en', updatedAt: FRESH }],
+        });
+        mockTopicsByName({ 'quantum mechanics': stub });
+        mockedBody.mockResolvedValue('## Overview\n[[입자]]와 [[파동]]');
+
+        await ensureArticle('Quantum Mechanics', 'en');
+
+        const call = mockedSync.mock.calls[0];
+        expect(call[1]).toBe('quantum mechanics');
+        expect(call[2]).toEqual(expect.arrayContaining(['입자', '파동']));
+        expect(call[3]).toEqual(['physics']);
+    });
+
+    it('토픽이 없으면 에러', async () => {
+        mockTopicsByName({});
+        await expect(ensureArticle('Nonexistent', 'en')).rejects.toThrow('토픽을 찾을 수 없습니다');
     });
 });

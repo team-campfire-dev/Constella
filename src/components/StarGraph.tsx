@@ -369,24 +369,51 @@ export default function StarGraph({ onNodeClick, overlayUserIds, selectedNodeId,
         if (lastDiscoveryRef.current === newDiscovery.topicId) return;
         lastDiscoveryRef.current = newDiscovery.topicId;
 
-        // Simply re-fetch the entire graph — clean and reliable
-        const refetch = async () => {
+        // A new star's node exists as soon as the chat responds, but its links come from
+        // the article body, which is written in the background afterwards. One fetch at
+        // 2s would reliably catch the node with no links and never look again, leaving
+        // the discovery stranded as an isolated point. So poll with a backoff and stop
+        // as soon as the node actually has an edge.
+        const discoveredTopicId = newDiscovery.topicId;
+        const DELAYS_MS = [2000, 9000, 25000];
+        const timers: ReturnType<typeof setTimeout>[] = [];
+        let settled = false;
+
+        const refetch = async (isFinalAttempt: boolean) => {
+            if (settled) return;
             try {
                 const overlayParam = overlayUserIds?.length
                     ? `&overlayUserIds=${overlayUserIds.join(',')}`
                     : '';
                 const res = await fetch(`/api/graph?lang=${locale}${overlayParam}`);
-                if (res.ok) {
-                    const graphData = await res.json();
-                    setData(graphData);
-                    shouldZoomToFitRef.current = true;
-                }
+                if (!res.ok) return;
+
+                const graphData = await res.json();
+                setData(graphData);
+                shouldZoomToFitRef.current = true;
+
+                const node = graphData.nodes?.find(
+                    (n: GraphNode) => n.topicId === discoveredTopicId
+                );
+                const hasLink = node && graphData.links?.some(
+                    // links may carry either node objects or bare ids depending on
+                    // whether the force simulation has already resolved them
+                    (l: { source: string | { id: string }; target: string | { id: string } }) => {
+                        const source = typeof l.source === 'object' ? l.source.id : l.source;
+                        const target = typeof l.target === 'object' ? l.target.id : l.target;
+                        return source === node.id || target === node.id;
+                    }
+                );
+                if (hasLink || isFinalAttempt) settled = true;
             } catch (e) {
                 console.error('Graph refetch failed:', e);
             }
         };
-        // Small delay to let the backend persist the new topic
-        setTimeout(refetch, 2000);
+
+        DELAYS_MS.forEach((delay, i) => {
+            timers.push(setTimeout(() => refetch(i === DELAYS_MS.length - 1), delay));
+        });
+        return () => timers.forEach(clearTimeout);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [newDiscovery]);
 

@@ -1,9 +1,9 @@
 import { pathToFileURL } from 'node:url';
 
 export async function resolve(specifier, context, nextResolve) {
-  if (specifier === '@google/generative-ai') {
+  if (specifier === '@google/genai') {
     return {
-      url: 'data:text/javascript,export class GoogleGenerativeAI { constructor() {} getGenerativeModel() { return {}; } }',
+      url: 'data:text/javascript,export class GoogleGenAI { constructor() {} get models() { return {}; } }',
       shortCircuit: true
     };
   }

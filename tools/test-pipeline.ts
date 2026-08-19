@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { processUserQuery } from '@/lib/wiki-engine';
+import { processUserQuery, ensureArticle } from '@/lib/wiki-engine';
 import prisma from '@/lib/prisma';
 
 const topic = process.argv[2] ?? '양자역학';
@@ -25,13 +25,14 @@ const language = process.argv[3] ?? 'ko';
     console.log('isNew:', result.isNew);
     console.log('\n=== answer (chat bubble) ===');
     console.log(result.answer);
-    console.log('\n=== content (wiki body) ===');
-    console.log(result.content);
-    console.log('\n=== content stats ===');
-    console.log('  length:', result.content.length, 'chars');
-    console.log('  words:', result.content.split(/\s+/).filter(Boolean).length);
-    console.log('  headings:', (result.content.match(/^##\s/gm) || []).length);
-    console.log('  [[links]]:', (result.content.match(/\[\[[^\]]+\]\]/g) || []).length);
+    console.log('\n=== wiki body (ensureArticle) ===');
+    const bodyStart = Date.now();
+    const body = await ensureArticle(result.topicId ? topic : topic, language);
+    console.log(`  생성/조회 ${Date.now() - bodyStart}ms`);
+    console.log('  length:', body.length, 'chars');
+    console.log('  words:', body.split(/\s+/).filter(Boolean).length);
+    console.log('  headings:', (body.match(/^##\s/gm) || []).length);
+    console.log('  [[links]]:', (body.match(/\[\[[^\]]+\]\]/g) || []).length);
 
     process.exit(0);
 })().catch(e => {

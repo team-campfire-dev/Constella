@@ -3,19 +3,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Set API key for tests before importing
 process.env.GOOGLE_GENERATIVE_AI_API_KEY = 'test-api-key';
 
-// Mock the @google/generative-ai module
+// Mock the @google/genai module.
+// 새 SDK는 모델별 핸들을 만들지 않고 ai.models.generateContent({model, contents, config})를
+// 직접 호출하며, 응답의 text는 메서드가 아니라 접근자다.
+// 모듈을 통째로 대체하면 Type·ThinkingLevel 열거형까지 사라져 gemini.ts가
+// 로드 시점에 터진다. 실제 모듈을 펼친 뒤 클라이언트 클래스만 덮는다.
 const mockGenerateContent = vi.fn();
-vi.mock('@google/generative-ai', () => {
+vi.mock('@google/genai', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@google/genai')>();
     return {
-        GoogleGenerativeAI: class {
-            getGenerativeModel() {
-                return { generateContent: mockGenerateContent };
-            }
+        ...actual,
+        GoogleGenAI: class {
+            models = { generateContent: mockGenerateContent };
         },
     };
 });
 
-const { batchTranslate, generateWikiContent, evaluateWikiContent } = await import('./gemini');
+const { batchTranslate, routeQuery, generateArticleBody, evaluateWikiContent } = await import('./gemini');
 type ChatHistoryEntry = import('./gemini').ChatHistoryEntry;
 
 
@@ -48,7 +52,7 @@ describe('batchTranslate', () => {
         };
 
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const result = await batchTranslate(['Black Hole', 'Quantum Mechanics'], 'ko');
@@ -61,7 +65,7 @@ describe('batchTranslate', () => {
     it('마크다운 코드 블록으로 감싸진 응답 처리', async () => {
         const mockResponse = { 'Star': '별' };
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => '```json\n' + JSON.stringify(mockResponse) + '\n```' },
+            text: '```json\n' + JSON.stringify(mockResponse) + '\n```',
         });
 
         const result = await batchTranslate(['Star'], 'ko');
@@ -71,7 +75,7 @@ describe('batchTranslate', () => {
     it('plain 마크다운 블록 처리', async () => {
         const mockResponse = { 'Planet': '행성' };
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => '```\n' + JSON.stringify(mockResponse) + '\n```' },
+            text: '```\n' + JSON.stringify(mockResponse) + '\n```',
         });
 
         const result = await batchTranslate(['Planet'], 'ko');
@@ -86,7 +90,7 @@ describe('batchTranslate', () => {
 
     it('잘못된 JSON 응답 시 빈 객체 반환', async () => {
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => 'Invalid JSON' },
+            text: 'Invalid JSON',
         });
 
         const result = await batchTranslate(['Universe'], 'ko');
@@ -94,250 +98,267 @@ describe('batchTranslate', () => {
     });
 });
 
-describe('generateWikiContent', () => {
+describe('routeQuery', () => {
     beforeEach(() => {
         mockGenerateContent.mockReset();
     });
 
-    it('정상 응답 처리 (happy path)', async () => {
-        const mockResponse = {
-            topic: 'Quantum Physics',
+    const routed = (over: Record<string, unknown> = {}) => ({
+        text: JSON.stringify({
+            intent: 'new_topic',
+            topic: '양자역학',
+            canonicalName: 'Quantum Mechanics',
             title: '양자 물리학',
-            canonicalName: 'Quantum Physics',
-            tags: ['Science', 'Physics'],
-            content: 'Quantum physics is...',
-            chatResponse: "Hello! Let's talk about quantum physics.",
-            isFollowUp: false,
-        };
-
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
-        });
-
-        const result = await generateWikiContent('Quantum Physics', 'ko');
-        expect(result).toEqual(mockResponse);
+            tags: ['physics'],
+            chatResponse: '양자역학은 [[입자]]와 [[파동]]을 다룹니다.',
+            ...over,
+        }),
     });
 
-    it('conversationHistory 전달 시 multi-turn contents 구성', async () => {
-        const mockResponse = {
-            topic: 'Quantum Physics',
-            content: 'More details about quantum physics...',
-            chatResponse: 'Here are more details.',
-            isFollowUp: true,
-            canonicalName: 'Quantum Physics',
-            tags: ['Science'],
-        };
+    it('new_topic 응답을 그대로 매핑한다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed());
+        const r = await routeQuery('양자역학', 'ko');
 
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
-        });
+        expect(r.intent).toBe('new_topic');
+        expect(r.topic).toBe('양자역학');
+        expect(r.canonicalName).toBe('Quantum Mechanics');
+        expect(r.title).toBe('양자 물리학');
+        expect(r.tags).toEqual(['physics']);
+        expect(r.chatResponse).toContain('[[입자]]');
+    });
 
+    it('reject면 이름 필드를 비운다 — 모델이 채워 보내도', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({
+            intent: 'reject',
+            chatResponse: '작업 수행 요청은 처리할 수 없습니다.',
+        }));
+        const r = await routeQuery('이 코드 리팩터링해줘', 'ko');
+
+        expect(r.intent).toBe('reject');
+        expect(r.canonicalName).toBe('');
+        expect(r.topic).toBe('');
+        expect(r.title).toBe('');
+        expect(r.tags).toEqual([]);
+        expect(r.chatResponse).not.toBe('');
+    });
+
+    it('follow_up이면 이름 필드를 비운다 — 참조 대상은 서버가 정한다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({ intent: 'follow_up' }));
+        const r = await routeQuery('좀 더 자세히', 'ko');
+
+        expect(r.intent).toBe('follow_up');
+        expect(r.canonicalName).toBe('');
+        expect(r.topic).toBe('');
+    });
+
+    it('모르는 intent 값은 new_topic으로 떨어뜨린다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({ intent: 'something_else' }));
+        const r = await routeQuery('양자역학', 'ko');
+        expect(r.intent).toBe('new_topic');
+    });
+
+    it('canonicalName이 비면 topic으로 대체한다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({ canonicalName: '' }));
+        const r = await routeQuery('양자역학', 'ko');
+        expect(r.canonicalName).toBe('양자역학');
+    });
+
+    it('대화 이력을 multi-turn으로 싣되 가짜 model 턴을 넣지 않는다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed({ intent: 'follow_up' }));
         const history: ChatHistoryEntry[] = [
-            { role: 'user', content: '양자역학이 뭐야?' },
-            { role: 'assistant', content: '양자역학은 미시 세계의 물리학입니다.' },
+            { role: 'user', content: '양자역학' },
+            { role: 'assistant', content: '양자역학은 ...' },
         ];
+        await routeQuery('좀 더 자세히', 'ko', history);
 
-        const result = await generateWikiContent('좀 더 자세히 알려줘', 'ko', history);
+        const contents = mockGenerateContent.mock.calls[0][0].contents;
+        expect(contents).toHaveLength(3);
+        expect(contents[0]).toEqual({ role: 'user', parts: [{ text: '양자역학' }] });
+        expect(contents[1]).toEqual({ role: 'model', parts: [{ text: '양자역학은 ...' }] });
+        expect(contents[2]).toEqual({ role: 'user', parts: [{ text: '좀 더 자세히' }] });
 
-        // Verify multi-turn contents structure:
-        // [system prompt, model ack, user msg, model msg, current query]
-        const callArgs = mockGenerateContent.mock.calls[0][0];
-        const contents = callArgs.contents;
-        expect(contents.length).toBe(5); // prompt + ack + 2 history + current query
-        expect(contents[0].role).toBe('user');   // system prompt
-        expect(contents[1].role).toBe('model');  // model acknowledgment
-        expect(contents[2].role).toBe('user');   // history user msg
-        expect(contents[3].role).toBe('model');  // history assistant msg
-        expect(contents[4].role).toBe('user');   // current query
-        expect(contents[4].parts[0].text).toBe('좀 더 자세히 알려줘');
-
-        expect(result.isFollowUp).toBe(true);
+        // 지침을 끼워넣기 위한 "네, 이해했습니다" 턴이 더 이상 없어야 한다.
+        const joined = JSON.stringify(contents);
+        expect(joined).not.toContain('이해했습니다');
     });
 
-    it('conversationHistory 없으면 single-turn (기존 동작)', async () => {
-        const mockResponse = {
-            topic: 'Mars',
-            content: 'Mars is the fourth planet.',
-            chatResponse: 'Mars is fascinating!',
-            isFollowUp: false,
-        };
+    it('이력이 없으면 단일 user 턴', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed());
+        await routeQuery('양자역학', 'ko');
 
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
-        });
-
-        const result = await generateWikiContent('Mars', 'en');
-
-        const callArgs = mockGenerateContent.mock.calls[0][0];
-        const contents = callArgs.contents;
-        expect(contents.length).toBe(1); // single prompt only
+        const contents = mockGenerateContent.mock.calls[0][0].contents;
+        expect(contents).toHaveLength(1);
         expect(contents[0].role).toBe('user');
-
-        expect(result.isFollowUp).toBe(false);
     });
 
-    it('isFollowUp 기본값은 false', async () => {
-        const mockResponse = {
-            topic: 'Biology',
-            content: 'Study of life.',
-        };
+    it('스키마·사고 레벨·시스템 지침을 config로 넘긴다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed());
+        await routeQuery('양자역학', 'ko');
 
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
-        });
-
-        const result = await generateWikiContent('Biology', 'en');
-        expect(result.isFollowUp).toBe(false);
+        const config = mockGenerateContent.mock.calls[0][0].config;
+        expect(config.responseSchema.properties.intent.enum)
+            .toEqual(['new_topic', 'follow_up', 'reject']);
+        // required가 좁아야 follow_up/reject에서 쓰지 않을 필드에 토큰을 쓰지 않는다.
+        expect(config.responseSchema.required).toEqual(['intent', 'chatResponse']);
+        expect(config.thinkingConfig.thinkingLevel).toBeDefined();
+        expect(config.systemInstruction).toContain('위키 본문은 작성하지 않습니다');
     });
 
-    it('마크다운 코드 블록 처리', async () => {
-        const mockResponse = { topic: 'AI', content: 'Artificial Intelligence is...', isFollowUp: false };
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => '```json\n' + JSON.stringify(mockResponse) + '\n```' },
-        });
+    it('시스템 지침이 reject와 안내를 명시적으로 가른다', async () => {
+        mockGenerateContent.mockResolvedValueOnce(routed());
+        await routeQuery('양자역학', 'ko');
 
-        const result = await generateWikiContent('AI', 'en');
-        expect(result.topic).toBe('AI');
-        expect(result.content).toBe(mockResponse.content);
+        const instruction = mockGenerateContent.mock.calls[0][0].config.systemInstruction;
+        expect(instruction).toContain('안내는 new_topic의 부가 요소이지 reject의 대체재가 아닙니다');
     });
 
-    it('앞뒤 공백/개행 포함 응답 처리', async () => {
-        const mockResponse = { topic: 'Space', content: 'Space is big.' };
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => '\n\n  ```json\n' + JSON.stringify(mockResponse) + '\n```  \n' },
-        });
-
-        const result = await generateWikiContent('Space', 'en');
-        expect(result.topic).toBe('Space');
-    });
-
-    it('배열 응답 언래핑 처리', async () => {
-        const mockResponse = [{ topic: 'Biology', content: 'Study of life.' }];
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
-        });
-
-        const result = await generateWikiContent('Biology', 'en');
-        expect(result.topic).toBe('Biology');
-    });
-
-    it('response/result 래퍼 언래핑 처리', async () => {
-        const mockResponse = { result: { topic: 'Chemistry', content: 'Study of matter.' } };
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
-        });
-
-        const result = await generateWikiContent('Chemistry', 'en');
-        expect(result.topic).toBe('Chemistry');
-    });
-
-    it('키 정규화 (대소문자 무시)', async () => {
-        const mockResponse = {
-            TOPIC: 'History',
-            CONTENT: 'Study of the past.',
-            CanonicalName: 'World History',
-        };
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
-        });
-
-        const result = await generateWikiContent('History', 'en');
-        expect(result.topic).toBe('History');
-        expect(result.content).toBe('Study of the past.');
-        expect(result.canonicalName).toBe('World History');
-    });
-
-    it('필수 필드(content) 누락 시 에러', async () => {
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify({ topic: 'Only Topic' }) },
-        });
-
-        await expect(generateWikiContent('Test', 'en')).rejects.toThrow(
-            "AI 사서로부터 콘텐츠를 생성하지 못했습니다: Gemini 응답에 'content' 필드가 누락되었습니다."
+    it('JSON이 깨지면 재시도 후 에러', async () => {
+        mockGenerateContent.mockResolvedValue({ text: 'not json' });
+        await expect(routeQuery('양자역학', 'ko')).rejects.toThrow(
+            'AI 사서가 요청을 해석하지 못했습니다.'
         );
+        expect(mockGenerateContent).toHaveBeenCalledTimes(3);
+    });
+});
+
+describe('generateArticleBody', () => {
+    beforeEach(() => {
+        mockGenerateContent.mockReset();
     });
 
-    it('잘못된 JSON 응답 시 에러', async () => {
-        // retry 3회 모두 invalid JSON → 최종 SyntaxError가 outer catch로 전달되어
-        // "AI가 올바른 JSON 형식을 반환하지 않았습니다." 메시지로 매핑된다.
-        mockGenerateContent.mockResolvedValue({
-            response: { text: () => 'This is not JSON' },
+    const BODY = '## 개요\n양자역학은 [[입자]]를 다룬다.\n\n## 상세\n...';
+
+    it('마크다운을 그대로 반환한다 (JSON 파싱 없음)', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: BODY });
+        const body = await generateArticleBody({ canonicalName: 'Quantum Mechanics', language: 'ko' });
+        expect(body).toBe(BODY);
+    });
+
+    it('JSON 강제 설정을 넘기지 않는다 — 스트리밍 가능한 평문이어야 한다', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: BODY });
+        await generateArticleBody({ canonicalName: 'Quantum Mechanics', language: 'ko' });
+
+        const config = mockGenerateContent.mock.calls[0][0].config;
+        expect(config.responseMimeType).toBeUndefined();
+        expect(config.responseSchema).toBeUndefined();
+        expect(config.systemInstruction).toContain('마크다운 본문만 출력하세요');
+    });
+
+    it('사용자 대화 이력을 받지 않는다 — 공유 문서이므로', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: BODY });
+        await generateArticleBody({
+            canonicalName: 'Quantum Mechanics',
+            title: '양자역학',
+            tags: ['physics'],
+            language: 'ko',
         });
 
-        await expect(generateWikiContent('Test', 'en')).rejects.toThrow(
-            'AI가 올바른 JSON 형식을 반환하지 않았습니다.'
-        );
+        const contents = mockGenerateContent.mock.calls[0][0].contents;
+        expect(contents).toHaveLength(1);
+        expect(contents[0].role).toBe('user');
+        expect(contents[0].parts[0].text).toContain('Quantum Mechanics');
     });
 
-    it('코드 블록 앞뒤 텍스트 포함 응답 처리', async () => {
-        const mockResponse = { topic: 'Physics', content: 'Gravity is a force.' };
-        mockGenerateContent.mockResolvedValueOnce({
-            response: {
-                text: () => 'Here is the result:\n```json\n' + JSON.stringify(mockResponse) + '\n```\nHope this helps!',
-            },
+    it('품질 보강은 대화 이력이 아니라 단일 턴으로 전달된다', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: BODY });
+        await generateArticleBody({
+            canonicalName: 'Quantum Mechanics',
+            language: 'ko',
+            deficiency: { reasons: ['words=100<400'], previous: '너무 짧은 이전 본문' },
         });
 
-        const result = await generateWikiContent('Physics', 'en');
-        expect(result.topic).toBe('Physics');
+        const contents = mockGenerateContent.mock.calls[0][0].contents;
+        // 턴이 늘어나면 본문 생성이 다시 대화 의존적이 된다.
+        expect(contents).toHaveLength(1);
+        const text = contents[0].parts[0].text;
+        expect(text).toContain('words=100<400');
+        expect(text).toContain('너무 짧은 이전 본문');
     });
 
-    it('isFollowUp 키 정규화 (대소문자 무시)', async () => {
-        const mockResponse = {
-            topic: 'Math',
-            content: 'Mathematics is...',
-            IsFollowUp: true,
-        };
-
-        mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
-        });
-
-        const result = await generateWikiContent('Math', 'en');
-        expect(result.isFollowUp).toBe(true);
+    it('빈 응답이면 재시도 후 에러', async () => {
+        mockGenerateContent.mockResolvedValue({ text: '   ' });
+        await expect(
+            generateArticleBody({ canonicalName: 'Quantum Mechanics', language: 'ko' })
+        ).rejects.toThrow('위키 본문을 생성하지 못했습니다');
+        expect(mockGenerateContent).toHaveBeenCalledTimes(3);
     });
-
 });
 
 describe('evaluateWikiContent', () => {
+    /** 지정한 어절/단어 수와 헤딩·링크를 갖춘 본문을 만든다. */
+    const body = (words: number, headings = 3, links = 5) => {
+        const heads = Array.from({ length: headings }, (_, i) => `## 섹션${i}`).join('\n');
+        const linkStr = Array.from({ length: links }, (_, i) => `[[링크${i}]]`).join(' ');
+        // 헤딩과 링크도 공백으로 분리되므로 나머지를 채운다
+        const fillerCount = Math.max(0, words - headings * 2 - links);
+        return [heads, linkStr, '단어 '.repeat(fillerCount)].join('\n');
+    };
+
     it('빈 콘텐츠는 실패', () => {
         const q = evaluateWikiContent('');
         expect(q.ok).toBe(false);
         expect(q.reasons).toContain('empty');
+        expect(q.score).toBe(0);
     });
 
-    it('헤딩/링크/단어 수가 모두 충족되면 ok=true', () => {
-        const filler = '이것은 테스트 본문 내용을 충분히 채우기 위한 더미 단어 들이다 '.repeat(80);
-        const content = [
-            '## 개요',
-            `${filler} [[테스트A]] [[테스트B]]`,
-            '## 상세',
-            `${filler} [[링크A]], [[링크B]], [[링크C]], [[링크D]] 포함.`,
-            '## 역사',
-            `${filler} 역사 [[배경]] 설명.`,
-        ].join('\n');
-        const q = evaluateWikiContent(content);
+    it('세 지표를 모두 충족하면 ok=true, score=3', () => {
+        const q = evaluateWikiContent(body(700, 6, 20), 'en');
         expect(q.ok).toBe(true);
-        expect(q.headings).toBeGreaterThanOrEqual(3);
-        expect(q.links).toBeGreaterThanOrEqual(5);
-        expect(q.words).toBeGreaterThanOrEqual(400);
+        expect(q.score).toBe(3);
     });
 
     it('헤딩이 부족하면 reasons에 포함', () => {
-        const content = '평문만 있고 헤딩 없음. [[A]] [[B]] [[C]] [[D]] [[E]]';
-        const q = evaluateWikiContent(content);
+        const q = evaluateWikiContent('평문만 있고 헤딩 없음. [[A]] [[B]] [[C]] [[D]] [[E]]', 'en');
         expect(q.ok).toBe(false);
         expect(q.reasons.some(r => r.startsWith('headings='))).toBe(true);
     });
 
     it('링크가 부족하면 reasons에 포함', () => {
-        const content = ['## A', '## B', '## C', '본문 단어들을 채워서 '.repeat(100)].join('\n');
-        const q = evaluateWikiContent(content);
+        const q = evaluateWikiContent(body(700, 3, 1), 'en');
         expect(q.reasons.some(r => r.startsWith('links='))).toBe(true);
     });
 
     it('단어가 부족하면 reasons에 포함', () => {
-        const content = '## A\n## B\n## C\n짧음 [[A]] [[B]] [[C]] [[D]] [[E]]';
-        const q = evaluateWikiContent(content);
+        const q = evaluateWikiContent(body(50), 'en');
         expect(q.reasons.some(r => r.startsWith('words='))).toBe(true);
+    });
+
+    // ─── 언어별 임계값 ────────────────────────────────────────────
+
+    it('같은 분량이라도 한국어는 통과하고 영어는 미달한다', () => {
+        // 400어절: 한국어 임계(300)는 넘지만 영어 임계(500)에는 못 미친다.
+        // 공백 분리로 어절을 세기 때문에 한국어 문서가 구조적으로 짧게 집계되는 것을 보정한다.
+        const content = body(400, 6, 10);
+        expect(evaluateWikiContent(content, 'ko').ok).toBe(true);
+        expect(evaluateWikiContent(content, 'en').ok).toBe(false);
+    });
+
+    it('미달 사유에 해당 언어의 임계값이 찍힌다', () => {
+        expect(evaluateWikiContent(body(100), 'ko').reasons).toContain('words=100<300');
+        expect(evaluateWikiContent(body(100), 'en').reasons).toContain('words=100<500');
+    });
+
+    it('모르는 언어는 기본 임계값을 쓴다', () => {
+        const content = body(400, 6, 10);
+        expect(evaluateWikiContent(content, 'ja').ok).toBe(false);
+        expect(evaluateWikiContent(content).ok).toBe(false);
+    });
+
+    // ─── 종합 점수 ────────────────────────────────────────────────
+
+    it('임계를 넘어선 몫은 점수에 보태지지 않는다', () => {
+        // 링크 100개짜리와 링크 5개짜리가 같은 점수여야, 링크 남발로
+        // 헤딩 부족을 상쇄하는 경로가 막힌다.
+        const many = evaluateWikiContent(body(700, 6, 100), 'en');
+        const enough = evaluateWikiContent(body(700, 6, 5), 'en');
+        expect(many.score).toBe(enough.score);
+    });
+
+    it('길지만 구조가 무너진 본문은 짧지만 온전한 본문보다 점수가 낮다', () => {
+        const structured = evaluateWikiContent(body(480, 6, 20), 'en'); // 분량만 살짝 미달
+        const sprawling = evaluateWikiContent(body(900, 1, 2), 'en');   // 길지만 헤딩·링크 붕괴
+        expect(structured.ok).toBe(false);
+        expect(sprawling.ok).toBe(false);
+        expect(structured.score).toBeGreaterThan(sprawling.score);
     });
 });

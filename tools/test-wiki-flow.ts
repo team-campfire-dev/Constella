@@ -31,7 +31,8 @@ async function main() {
         console.log("✅ Response Received:");
         console.log(`   - Topic ID: ${response.topicId}`);
         console.log(`   - Is New: ${response.isNew}`);
-        console.log(`   - Content Preview: ${response.content.substring(0, 50)}...`);
+        console.log(`   - Answer Preview: ${response.answer.substring(0, 60)}...`);
+        console.log(`   (본문은 응답 이후 백그라운드에서 생성됩니다 — ensureArticle)`);
     } catch (e) {
         console.error("❌ processUserQuery Failed:", e);
         process.exit(1);

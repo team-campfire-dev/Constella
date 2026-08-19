@@ -70,11 +70,15 @@ export async function POST(req: Request) {
 
         // Save AI Response to Chat History (Content DB)
         // Note: We save the "answer" (chat response) to chat history, but the "content" (wiki data) is already saved in WikiArticle.
+        // topicId lets the history reload restore the "View Wiki" affordance, and gives the
+        // server its own record of what the last turn was about (instead of asking the model again).
+        // Rejected queries return an empty topicId — store null, not "".
         await prismaContent.chatHistory.create({
             data: {
                 userId,
                 role: 'assistant',
-                content: wikiResult.answer
+                content: wikiResult.answer,
+                topicId: wikiResult.topicId || null
             }
         });
 
@@ -103,11 +107,14 @@ export async function GET(_req: NextRequest) {
     const userId = session.user.id;
 
     try {
-        const history = await prismaContent.chatHistory.findMany({
+        // 최신 50개를 가져온 뒤 시간순으로 되돌린다.
+        // 'asc' + take는 가장 오래된 50개를 집어오므로, 메시지가 50개를 넘긴
+        // 사용자는 최근 대화를 영영 볼 수 없었다. (POST 쪽 최근 10개 조회와 같은 패턴)
+        const history = (await prismaContent.chatHistory.findMany({
             where: { userId },
-            orderBy: { createdAt: 'asc' },
+            orderBy: { createdAt: 'desc' },
             take: 50
-        });
+        })).reverse();
 
         return NextResponse.json({
             success: true,
@@ -115,6 +122,7 @@ export async function GET(_req: NextRequest) {
                 id: msg.id,
                 role: msg.role,
                 content: msg.content,
+                topicId: msg.topicId,
                 timestamp: msg.createdAt
             }))
         });

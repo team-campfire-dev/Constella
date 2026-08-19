@@ -2,12 +2,28 @@
 import prismaContent from '@/lib/prisma-content'; // Content DB
 import { withDualTransaction } from '@/lib/transaction';
 import { syncArticleToGraph, mergeAliasesToCanonical } from '@/lib/graph';
-import { generateWikiContent, evaluateWikiContent, ChatHistoryEntry } from '@/lib/gemini';
+import { routeQuery, generateArticleBody, evaluateWikiContent, ChatHistoryEntry } from '@/lib/gemini';
 import logger from "@/lib/logger";
+
+/** 이 기간이 지난 본문은 낡은 것으로 보고 다시 만든다. */
+const STALE_AFTER_MONTHS = 3;
+
+function staleBefore(): Date {
+    const d = new Date();
+    d.setMonth(d.getMonth() - STALE_AFTER_MONTHS);
+    return d;
+}
+
+interface ArticleLike { content: string | null; updatedAt: Date }
+
+/** 본문이 있고 낡지 않았는가. 이 판정이 "캐시 히트"의 정의다. */
+function isFresh(article: ArticleLike | undefined | null): boolean {
+    return !!article?.content && article.updatedAt >= staleBefore();
+}
 
 /**
  * 위키 본문에서 첫 번째 ## 섹션(보통 "개요"/"Overview")을 추출해 채팅 미리보기로 사용합니다.
- * 캐시 히트(Gemini 미호출) 경로에서 chat bubble이 빈약해지지 않도록 함.
+ * 캐시 히트(모델 미호출) 경로에서 chat bubble이 빈약해지지 않도록 함.
  */
 function extractOverview(content: string): string {
     if (!content) return '';
@@ -16,6 +32,11 @@ function extractOverview(content: string): string {
     // 헤딩이 없으면 첫 문단
     const firstPara = content.split(/\n\s*\n/)[0];
     return firstPara.trim();
+}
+
+/** 캐시 히트일 때의 말풍선. 모델을 부르지 않는다. */
+function archiveAnswer(topicName: string, content: string): string {
+    return `**[ARCHIVE RETRIEVED]** *"${topicName}"*에 대한 기록을 발견했습니다.\n\n${extractOverview(content)}`;
 }
 
 /**
@@ -44,7 +65,7 @@ function pickBestFuzzyMatch<T extends { name: string }>(query: string, candidate
 }
 
 /**
- * Gemini가 반환한 태그를 정규화하고 중복을 제거합니다.
+ * 라우터가 반환한 태그를 정규화하고 중복을 제거합니다.
  */
 function normalizeTags(tags: string[]): string[] {
     const seen = new Set<string>();
@@ -57,6 +78,11 @@ function normalizeTags(tags: string[]): string[] {
         result.push(normalized);
     }
     return result;
+}
+
+/** AI가 생성한 [Text](URL) 형식을 내부 링크 형식 [[Text]]로 변환 */
+function normalizeMarkdownLinks(text: string): string {
+    return text.replace(/\[([^\]]+)\]\([^)]+\)/g, '[[$1]]');
 }
 
 interface CachedKeyword {
@@ -157,453 +183,397 @@ class KeywordCache {
     }
 }
 
-interface WikiResponse {
+/**
+ * 본문 전체를 훑어 알려진 토픽·별칭을 [[링크]]로 감쌉니다.
+ *
+ * 이 후처리는 위키 본문에만 적용합니다. 여기서 추출된 링크가 곧 Neo4j 엣지가 되므로
+ * 장식이 아니라 데이터입니다. (채팅 답변에는 적용하지 않습니다 — 그쪽은 UI에서
+ * 굵은 글씨로만 렌더되고 그래프에도 기여하지 않아, 임계 경로에 KeywordCache 의존을
+ * 남길 이유가 없습니다.)
+ */
+function performAutoLink(text: string, processedKeywords: CachedKeyword[]): string {
+    if (!text) return text;
+
+    // 1. 후보 키워드 선별 (전체 키워드 중 텍스트에 포함된 것만 골라냄)
+    // .includes()는 매우 최적화되어 있어 수만 개의 키워드에 대해서도 루프보다 빠름
+    const lowerText = text.toLowerCase();
+    const candidates = processedKeywords.filter(k => lowerText.includes(k.word));
+    if (candidates.length === 0) return text;
+
+    const placeholders: string[] = [];
+    // 2. 기존 링크 [[...]] 마스킹
+    let masked = text.replace(/\[\[(.*?)\]\]/g, (match) => {
+        placeholders.push(match);
+        return `__PH_${placeholders.length - 1}__`;
+    });
+
+    // 3. 단일 정규식 구성 (이미 길이 역순으로 정렬되어 있어 최장 일치 우선 매칭됨)
+    const patternParts = candidates.map(k => k.pattern);
+    if (patternParts.length > 0) {
+        // 위키 관례: 같은 키워드는 첫 등장에서만 [[link]] 처리해 시각적 노이즈와 그래프 가중치 왜곡 방지
+        const combinedPattern = new RegExp(`(${patternParts.join('|')})`, 'gi');
+        const seen = new Set<string>();
+        masked = masked.replace(combinedPattern, (match) => {
+            const key = match.toLowerCase().replace(/\s+/g, '');
+            if (seen.has(key)) return match;
+            seen.add(key);
+            return `[[${match}]]`;
+        });
+    }
+
+    // 4. 플레이스홀더 복원
+    return masked.replace(/__PH_(\d+)__/g, (_, index) => placeholders[parseInt(index)]);
+}
+
+// ════════════════════════════════════════════════════════════════
+// ⑤ 본문 보장 — 응답 이후 백그라운드, 그리고 위키 열람 시의 지연 생성.
+//
+// 두 경로가 같은 함수를 공유하고 in-flight Map이 중복 호출을 하나로 접는다.
+// 키에 사용자 ID가 없다: 본문은 (canonicalName, language)의 함수이며 모든
+// 탐험가가 같은 문서를 본다. 두 사람이 동시에 같은 새 토픽을 발견하면
+// 생성은 한 번만 돌고 둘 다 그 결과를 받는다.
+//
+// 상태를 DB에 두지 않는 이유: 프로세스가 죽으면 이 Map도 함께 사라지고
+// 남는 것은 빈 content뿐인데, 그건 이미 "생성 필요"를 뜻하는 기존 상태다.
+// 재시작이 곧 자가 치유이고, 좀비 PENDING 행이 생기지 않는다.
+// ════════════════════════════════════════════════════════════════
+
+const inFlight = new Map<string, Promise<string>>();
+
+/**
+ * 해당 토픽·언어의 위키 본문이 존재하도록 보장하고 그 내용을 반환합니다.
+ * 이미 생성이 진행 중이면 새로 호출하지 않고 그 작업을 기다립니다.
+ */
+export async function ensureArticle(canonicalName: string, language: string = 'en'): Promise<string> {
+    const name = canonicalName.trim().toLowerCase();
+    const key = `${name}:${language}`;
+
+    const running = inFlight.get(key);
+    if (running) {
+        logger.info(`[WikiEngine] 본문 생성이 이미 진행 중, 대기: ${key}`);
+        return running;
+    }
+
+    const task = buildArticle(name, language).finally(() => inFlight.delete(key));
+    inFlight.set(key, task);
+    return task;
+}
+
+async function buildArticle(name: string, language: string): Promise<string> {
+    const topic = await prismaContent.topic.findUnique({
+        where: { name },
+        include: { articles: { where: { language } }, tags: true },
+    });
+    if (!topic) {
+        throw new Error(`ensureArticle: 토픽을 찾을 수 없습니다 — ${name}`);
+    }
+
+    const existing = topic.articles[0];
+    if (isFresh(existing)) return existing.content!;
+
+    const tags = topic.tags.map(t => t.name);
+    logger.info(`[WikiEngine] 본문 생성 시작: ${name} (${language})`);
+
+    let body = await generateArticleBody({
+        canonicalName: topic.name,
+        title: existing?.title ?? undefined,
+        tags,
+        language,
+    });
+
+    // 품질 게이트. 미달이면 1회만 다시 시도한다.
+    // 보강 지시는 대화 이력이 아니라 단일 턴으로 전달된다 — 본문 생성이
+    // 사용자와 무관한 함수로 남아야 위쪽 in-flight 공유가 정당하다.
+    const quality = evaluateWikiContent(body, language);
+    if (!quality.ok) {
+        logger.warn(`[WikiEngine] 본문 품질 미달, 1회 재생성 시도`, {
+            name, language, reasons: quality.reasons,
+            headings: quality.headings, links: quality.links, words: quality.words,
+        });
+        try {
+            const retried = await generateArticleBody({
+                canonicalName: topic.name,
+                title: existing?.title ?? undefined,
+                tags,
+                language,
+                deficiency: { reasons: quality.reasons, previous: body },
+            });
+            const retriedQuality = evaluateWikiContent(retried, language);
+            // 단어 수 하나로 비교하면 헤딩과 링크가 퇴행해도 장황해지기만 하면 이긴다.
+            // 세 지표를 정규화한 종합 점수로 비교해 그 경로를 막는다.
+            if (retriedQuality.ok || retriedQuality.score > quality.score) {
+                body = retried;
+            } else {
+                logger.warn(`[WikiEngine] 재생성이 더 낫지 않아 첫 결과 유지`, {
+                    firstScore: quality.score, retryScore: retriedQuality.score,
+                    firstReasons: quality.reasons, retryReasons: retriedQuality.reasons,
+                });
+            }
+        } catch (e) {
+            logger.warn(`[WikiEngine] 재생성 실패, 첫 결과 유지`, {
+                message: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
+
+    body = normalizeMarkdownLinks(body);
+
+    const { processedKeywords, nameMap } = await KeywordCache.getKeywordsData();
+    body = performAutoLink(body, processedKeywords);
+
+    // 본문의 [[링크]]가 곧 그래프 엣지가 된다.
+    const linked = [...body.matchAll(/\[\[(.*?)\]\]/g)].map(m => m[1]);
+    const resolveKeyword = (k: string) => {
+        const lower = k.trim().toLowerCase();
+        const stripped = lower.replace(/\s+/g, '');
+        return nameMap.get(lower) ?? nameMap.get(stripped) ?? k.trim();
+    };
+    const uniqueKeywords = Array.from(new Set(linked.map(resolveKeyword)));
+
+    const finalBody = body;
+    await withDualTransaction(async (prismaTx, neo4jTx) => {
+        await prismaTx.wikiArticle.upsert({
+            where: { topicId_language: { topicId: topic.id, language } },
+            update: { content: finalBody },
+            create: {
+                topicId: topic.id,
+                language,
+                content: finalBody,
+                title: existing?.title ?? topic.name,
+            },
+        });
+        // 노드는 ④에서 이미 만들어졌다. 이 호출이 엣지와 태그를 붙인다.
+        await syncArticleToGraph(neo4jTx, topic.name, uniqueKeywords, tags, topic.id);
+    });
+
+    logger.info(`[WikiEngine] 본문 생성 완료: ${name} (${language}), 링크 ${uniqueKeywords.length}개`);
+    return finalBody;
+}
+
+// ════════════════════════════════════════════════════════════════
+// ①~④ 사용자 질의 처리 — 사용자가 기다리는 구간.
+// ════════════════════════════════════════════════════════════════
+
+export interface WikiResponse {
+    /** 채팅 말풍선에 실릴 내용. */
     answer: string;
-    content: string;
     isNew: boolean;
+    /** 빈 문자열이면 연결된 토픽이 없다는 뜻 (거부, 또는 참조할 직전 토픽이 없는 후속질문). */
     topicId: string;
 }
 
-/**
- * 사용자의 질문을 처리하여 AI 사서가 답변을 생성하거나 캐시된 내용을 반환합니다.
- * 1. 주제(Topic) 찾기 (별칭 포함)
- * 2. 데이터 최신성(Staleness) 확인 (3개월)
- * 3. 필요 시 AI 콘텐츠 생성 및 그래프 동기화
- * 4. 사용자 탐사 기록(ShipLog) 업데이트
- */
-export async function processUserQuery(userId: string, query: string, language: string = 'en', chatHistory?: ChatHistoryEntry[]): Promise<WikiResponse> {
-    const normalizedName = query.trim().toLowerCase();
-
-    // 1. 별칭(Alias)을 통해 주제(Topic) 찾기
-    let topic = await prismaContent.topic.findUnique({
+/** ① 정확 일치 → 별칭 → 퍼지. 모델을 부르지 않는다. */
+async function findTopicByQuery(normalizedName: string, language: string) {
+    const direct = await prismaContent.topic.findUnique({
         where: { name: normalizedName },
-        include: { articles: { where: { language } } }
+        include: { articles: { where: { language } } },
     });
+    if (direct) return direct;
 
-    // 이름으로 찾지 못한 경우 별칭 테이블 검색 (case-insensitive)
-    if (!topic) {
-        const alias = await prismaContent.alias.findUnique({
-            where: { name: query.trim().toLowerCase() },
-            include: { topic: { include: { articles: { where: { language } } } } }
-        });
-        if (alias) {
-            topic = alias.topic;
-        }
-    }
+    const alias = await prismaContent.alias.findUnique({
+        where: { name: normalizedName },
+        include: { topic: { include: { articles: { where: { language } } } } },
+    });
+    if (alias) return alias.topic;
 
-    // 1-2. Fuzzy 사전 조회 (Gemini 호출 전 유사 Topic 검색)
-    // 정확 일치가 실패한 경우, DB에서 유사한 주제를 검색하여 중복 생성 방지.
-    // 점수화로 가장 유사한 후보만 채택. 임계값 미달이면 신규 생성으로 진행.
-    if (!topic && normalizedName.length >= 3) {
-        const candidates = await prismaContent.topic.findMany({
-            where: {
-                OR: [
-                    { name: { contains: normalizedName } },
-                    { name: { startsWith: normalizedName.substring(0, Math.min(normalizedName.length, 10)) } },
-                ]
-            },
-            include: { articles: { where: { language } }, aliases: true },
-            take: 5,
-        });
+    if (normalizedName.length < 3) return null;
 
-        const bestTopic = pickBestFuzzyMatch(normalizedName, candidates);
-        if (bestTopic) {
-            topic = bestTopic;
-        } else {
-            // 별칭에서도 fuzzy 검색
-            const aliasCandidates = await prismaContent.alias.findMany({
-                where: {
-                    name: { contains: normalizedName },
-                },
-                include: { topic: { include: { articles: { where: { language } } } } },
-                take: 5,
-            });
-            const bestAlias = pickBestFuzzyMatch(normalizedName, aliasCandidates);
-            if (bestAlias) {
-                topic = bestAlias.topic;
-            }
-        }
-    }
+    const candidates = await prismaContent.topic.findMany({
+        where: {
+            OR: [
+                { name: { contains: normalizedName } },
+                { name: { startsWith: normalizedName.substring(0, Math.min(normalizedName.length, 10)) } },
+            ],
+        },
+        include: { articles: { where: { language } } },
+        take: 5,
+    });
+    const best = pickBestFuzzyMatch(normalizedName, candidates);
+    if (best) return best;
 
-    // 2. 데이터 최신성 확인
-    const now = new Date();
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(now.getMonth() - 3);
+    const aliasCandidates = await prismaContent.alias.findMany({
+        where: { name: { contains: normalizedName } },
+        include: { topic: { include: { articles: { where: { language } } } } },
+        take: 5,
+    });
+    const bestAlias = pickBestFuzzyMatch(normalizedName, aliasCandidates);
+    return bestAlias ? bestAlias.topic : null;
+}
 
-    let content = "";
-    let answer = "";
-    let isNew = false;
-    let topicId = topic?.id;
+/**
+ * 후속질문이 가리키는 토픽을 서버 기록에서 찾습니다.
+ *
+ * 모델에게 이름을 다시 말하게 하지 않는 이유: canonical 이름이 조금만 흔들려도
+ * 조회가 빗나가고, 그러면 에러 없이 중복 토픽이 하나 더 생긴다. 서버가 기억한
+ * topicId는 정의상 존재하므로 그 실패 모드 자체가 사라진다.
+ */
+async function lastDiscussedTopicId(userId: string): Promise<string | null> {
+    const row = await prismaContent.chatHistory.findFirst({
+        where: { userId, role: 'assistant', topicId: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        select: { topicId: true },
+    });
+    return row?.topicId ?? null;
+}
 
-    // 기사(Article) 찾기
-    // 1:N 관계지만 특정 언어로 필터링했으므로 최대 1개
-    const article = topic?.articles?.[0];
-
-    // 주제가 없거나, 기사가 없거나, 기사 내용이 비어있거나(Lazy Loading 스텁), 기사가 3개월 이상 된 경우 재생성 필요
-    const needsGeneration = !topic || !article || !article.content || article.updatedAt < threeMonthsAgo;
-
-    if (needsGeneration) {
-        logger.info(`[WikiEngine] 콘텐츠 생성 중: ${query} (언어: ${language})`);
-
-        // 3. AI 콘텐츠 생성 (대화 이력 포함)
-        let generated = await generateWikiContent(query, language, chatHistory);
-
-        // 3-0. 품질 검증: 나무위키 스타일 프롬프트가 요구하는 구조를 만족하는지 확인.
-        // Unknown/Follow-up 경로는 검증 대상이 아님 (위키 본문 저장 자체를 안 함).
-        if (generated.topic !== 'Unknown' && !generated.isFollowUp) {
-            const quality = evaluateWikiContent(generated.content);
-            if (!quality.ok) {
-                logger.warn(`[WikiEngine] 콘텐츠 품질 미달, 1회 재생성 시도`, {
-                    query, language, reasons: quality.reasons,
-                    headings: quality.headings, links: quality.links, words: quality.words,
-                });
-                // 재생성: 부족한 점을 알려주는 보강 지시를 history에 추가
-                const retryHint = `이전 응답이 다음 기준에 미달했습니다: ${quality.reasons.join(', ')}. 반드시 \`##\` 헤딩 3개 이상, [[링크]] 5개 이상, 400단어 이상으로 다시 작성해주세요.`;
-                const retryHistory: ChatHistoryEntry[] = [
-                    ...(chatHistory ?? []),
-                    { role: 'user', content: query },
-                    { role: 'assistant', content: generated.content || '(empty)' },
-                    { role: 'user', content: retryHint },
-                ];
-                try {
-                    const retried = await generateWikiContent(query, language, retryHistory);
-                    const retriedQuality = evaluateWikiContent(retried.content);
-                    if (retriedQuality.ok || retriedQuality.words > quality.words) {
-                        generated = retried;
-                    } else {
-                        logger.warn(`[WikiEngine] 재생성도 품질 미달, 첫 결과 유지`, {
-                            firstWords: quality.words, retryWords: retriedQuality.words,
-                        });
-                    }
-                } catch (e) {
-                    logger.warn(`[WikiEngine] 재생성 실패, 첫 결과 유지`, {
-                        message: e instanceof Error ? e.message : String(e),
-                    });
-                }
-            }
-        }
-
-        // [추가] 마크다운 링크 정규화
-        // AI가 생성한 [Text](URL) 형식을 내부 링크 형식 [[Text]]로 변환
-        const normalizeMarkdownLinks = (text: string) => {
-            return text.replace(/\[([^\]]+)\]\([^)]+\)/g, '[[$1]]');
-        };
-
-        content = normalizeMarkdownLinks(generated.content);
-        answer = normalizeMarkdownLinks(generated.chatResponse);
-
-        // [추가] "Unknown" 주제 처리
-        // Gemini가 주제를 "Unknown"으로 식별한 경우 (잘못된 요청 또는 복잡한 관련 없는 명령),
-        // 답변만 반환하고 DB에 저장하지 않음.
-        if (generated.topic === "Unknown") {
-            return { answer, content, isNew: false, topicId: "" };
-        }
-
-        // [추가] 후속 질문 경량 경로
-        // Gemini가 isFollowUp: true 반환 시, WikiArticle을 건드리지 않고 chatResponse만 사용
-        if (generated.isFollowUp) {
-            const followUpCanonical = (generated.canonicalName || generated.topic).trim().toLowerCase();
-            const followUpTopic = await prismaContent.topic.findUnique({
-                where: { name: followUpCanonical },
-                include: { articles: { where: { language } } }
-            });
-
-            if (followUpTopic) {
-                // 기존 Topic 발견: chatResponse만 반환, WikiArticle 미수정
-                topicId = followUpTopic.id;
-
-                // ShipLog 업데이트 (재방문)
-                try {
-                    await prismaContent.user.upsert({
-                        where: { id: userId },
-                        update: {},
-                        create: { id: userId }
-                    });
-                    await prismaContent.shipLog.upsert({
-                        where: { userId_topicId: { userId, topicId: topicId! } },
-                        update: { discoveredAt: new Date() },
-                        create: { userId, topicId: topicId!, discoveredAt: new Date() }
-                    });
-                } catch (e) {
-                    logger.error("[WikiEngine] Follow-up ShipLog 업데이트 실패:", { error: e instanceof Error ? e.message : e });
-                }
-
-                return { answer, content: followUpTopic.articles?.[0]?.content || '', isNew: false, topicId };
-            }
-            // 기존 Topic 미발견 시 정상 생성 경로로 폴스루
-            logger.info(`[WikiEngine] Follow-up topic not found in DB, proceeding with full generation: ${followUpCanonical}`);
-        }
-
-        // 정식 명칭(Canonical Name) 사용 (중복 방지)
-        const canonicalName = generated.canonicalName || generated.topic;
-        const mainTopicName = canonicalName.trim().toLowerCase(); // DB 키
-        const extractedTopicName = generated.topic.trim(); // 원래 추출된 주제
-        const tags = normalizeTags(generated.tags || []);
-
-        // Post-Generation 중복 검사: Gemini가 반환한 canonicalName으로 기존 Topic 확인
-        const existingByCanonical = await prismaContent.topic.findUnique({
-            where: { name: mainTopicName },
-            include: { articles: { where: { language } } }
-        });
-
-        if (existingByCanonical?.articles?.[0]?.content &&
-            existingByCanonical.articles[0].updatedAt >= threeMonthsAgo) {
-            // 기존 캐시 사용, 별칭만 추가 등록
-            content = existingByCanonical.articles[0].content;
-            const overview = extractOverview(content);
-            answer = `**[ARCHIVE RETRIEVED]** *"${existingByCanonical.name}"*에 대한 기록을 발견했습니다.\n\n${overview}`;
-            topicId = existingByCanonical.id;
-
-            // 별칭 등록 (user query -> existing topic)
-            if (normalizedName !== mainTopicName) {
-                try {
-                    await prismaContent.alias.upsert({
-                        where: { name: normalizedName },
-                        update: {},
-                        create: { name: normalizedName, topicId: existingByCanonical.id }
-                    });
-                    KeywordCache.invalidate();
-                } catch { /* 중복 무시 */ }
-            }
-
-            // ShipLog 업데이트
-            try {
-                await prismaContent.user.upsert({
-                    where: { id: userId },
-                    update: {},
-                    create: { id: userId }
-                });
-                await prismaContent.shipLog.upsert({
-                    where: { userId_topicId: { userId, topicId: topicId! } },
-                    update: { discoveredAt: new Date() },
-                    create: { userId, topicId: topicId!, discoveredAt: new Date() }
-                });
-            } catch (e) {
-                logger.error("[WikiEngine] ShipLog 업데이트 실패:", { error: e instanceof Error ? e.message : e });
-            }
-
-            return { answer, content, isNew: false, topicId };
-        }
-
-        // 3-1. 자동 링크 생성기 (후처리)
-        const { processedKeywords, nameMap: cachedNameMap } = await KeywordCache.getKeywordsData();
-
-        // 마스킹 및 자동 링크 생성 (하이브리드 최적화: 선별 후 단일 패스 교체)
-        const performAutoLink = (text: string) => {
-            if (!text) return text;
-
-            // 1. 후보 키워드 선별 (전체 키워드 중 텍스트에 포함된 것만 골라냄)
-            // .includes()는 매우 최적화되어 있어 수만 개의 키워드에 대해서도 루프보다 빠름
-            const lowerText = text.toLowerCase();
-
-            // Optimization: check against pre-lowercased word
-            const candidates = processedKeywords.filter(k => lowerText.includes(k.word));
-
-            if (candidates.length === 0) return text;
-
-            const placeholders: string[] = [];
-            // 2. 기존 링크 [[...]] 마스킹
-            let masked = text.replace(/\[\[(.*?)\]\]/g, (match) => {
-                placeholders.push(match);
-                return `__PH_${placeholders.length - 1}__`;
-            });
-
-            // 3. 단일 정규식 구성 (이미 길이 역순으로 정렬되어 있어 최장 일치 우선 매칭됨)
-            // Optimization: use pre-calculated patterns
-            const patternParts = candidates.map(k => k.pattern);
-
-            if (patternParts.length > 0) {
-                // 선별된 후보에 대해서만 정규식 매칭 수행 (성능 대폭 향상)
-                // 위키 관례: 같은 키워드는 첫 등장에서만 [[link]] 처리해 시각적 노이즈와 그래프 가중치 왜곡 방지
-                const combinedPattern = new RegExp(`(${patternParts.join('|')})`, 'gi');
-                const seen = new Set<string>();
-                masked = masked.replace(combinedPattern, (match) => {
-                    const key = match.toLowerCase().replace(/\s+/g, '');
-                    if (seen.has(key)) return match;
-                    seen.add(key);
-                    return `[[${match}]]`;
-                });
-            }
-
-            // 4. 플레이스홀더 복원
-            return masked.replace(/__PH_(\d+)__/g, (_, index) => placeholders[parseInt(index)]);
-        };
-
-        content = performAutoLink(content);
-        answer = performAutoLink(answer); // UI를 위해 채팅 답변에도 링크 적용
-
-        // 링크 파싱 [[Keyword]] (다시 수행)
-        const linkRegex = /\[\[(.*?)\]\]/g;
-        const matches = [...content.matchAll(linkRegex)];
-        const linkedKeywords = matches.map(match => match[1]);
-
-        // 4. 이중 트랜잭션 (Content DB + Neo4j)
-        const savedTopic = await withDualTransaction(async (prismaTx, neo4jTx) => {
-            // A. 주제(Topic) 생성 또는 업데이트
-            // 참고: 주제가 이미 존재하면 태그만 업데이트하고, 없으면 생성
-            const t = await prismaTx.topic.upsert({
-                where: { name: mainTopicName },
-                update: {
-                    tags: {
-                        connectOrCreate: tags.map(tag => ({
-                            where: { name: tag },
-                            create: { name: tag }
-                        }))
-                    }
-                },
-                create: {
-                    name: mainTopicName,
-                    tags: {
-                        connectOrCreate: tags.map(tag => ({
-                            where: { name: tag },
-                            create: { name: tag }
-                        }))
-                    }
-                }
-            });
-
-            // B. 기사(Article) 생성 또는 업데이트 (복합 키: topicId + language)
-            await prismaTx.wikiArticle.upsert({
-                where: {
-                    topicId_language: {
-                        topicId: t.id,
-                        language: language
-                    }
-                },
-                update: { content, language, title: generated.title || extractedTopicName },
-                create: { topicId: t.id, content, language, title: generated.title || extractedTopicName }
-            });
-
-            // C. 별칭(Alias) 등록 (일관되게 lowercase로 저장)
-            // 1) 사용자가 입력한 쿼리 (검색어) -> 주제
-            if (query.trim().toLowerCase() !== mainTopicName) {
-                try {
-                    await prismaTx.alias.upsert({
-                        where: { name: query.trim().toLowerCase() },
-                        update: {},
-                        create: { name: query.trim().toLowerCase(), topicId: t.id }
-                    });
-                } catch {
-                    // 무시 (중복 등)
-                }
-            }
-
-            // 2) AI가 추출한 짧은 주제명 (generated.topic) -> 주제
-            if (extractedTopicName.toLowerCase() !== mainTopicName) {
-                try {
-                    await prismaTx.alias.upsert({
-                        where: { name: extractedTopicName.toLowerCase() },
-                        update: {},
-                        create: { name: extractedTopicName.toLowerCase(), topicId: t.id }
-                    });
-                } catch {
-                    // 무시
-                }
-            }
-
-            // D. Neo4j 그래프 동기화
-            // Optimization: Avoid O(N) map copy by using look-aside map
-            const localNameMap = new Map<string, string>();
-
-            // 맵 추가 헬퍼 (Adds to local map only)
-            const addToMap = (key: string, value: string) => {
-                const lower = key.toLowerCase();
-                const stripped = lower.replace(/\s+/g, '');
-                localNameMap.set(lower, value);
-                localNameMap.set(stripped, value);
-            };
-
-            // 현재 생성된 주제 및 별칭을 맵에 추가
-            const mainTopicNameLower = mainTopicName.toLowerCase();
-            addToMap(mainTopicName, mainTopicNameLower);
-            if (query.trim().toLowerCase() !== mainTopicNameLower) {
-                addToMap(query.trim(), mainTopicNameLower);
-            }
-            if (extractedTopicName.toLowerCase() !== mainTopicNameLower) {
-                addToMap(extractedTopicName, mainTopicNameLower);
-            }
-
-            // Helper to resolve keyword using local map then cached map
-            const resolveKeyword = (k: string) => {
-                const lower = k.trim().toLowerCase();
-                const stripped = lower.replace(/\s+/g, '');
-
-                // Check local map first
-                if (localNameMap.has(lower)) return localNameMap.get(lower)!;
-                if (localNameMap.has(stripped)) return localNameMap.get(stripped)!;
-
-                // Check cached map
-                if (cachedNameMap.has(lower)) return cachedNameMap.get(lower)!;
-                if (cachedNameMap.has(stripped)) return cachedNameMap.get(stripped)!;
-
-                return k.trim();
-            };
-
-            const resolvedKeywords = linkedKeywords.map(k => resolveKeyword(k));
-
-            // 중복 제거
-            const uniqueKeywords = Array.from(new Set(resolvedKeywords));
-
-            await syncArticleToGraph(neo4jTx, mainTopicName, uniqueKeywords, tags, t.id);
-
-            // 3-2.5. 고스트 노드 병합 (Alias -> Canonical)
-            // 별칭(검색어, 추출된 주제명)이 있다면, 해당 이름으로 존재하는 고스트 노드를 메인 노드로 병합해야 함.
-            const aliasesToMerge = Array.from(new Set([
-                query.trim().toLowerCase() !== mainTopicName ? query.trim() : null,
-                extractedTopicName.toLowerCase() !== mainTopicName ? extractedTopicName : null
-            ].filter(Boolean) as string[]));
-
-            if (aliasesToMerge.length > 0) {
-                await mergeAliasesToCanonical(neo4jTx, mainTopicName, aliasesToMerge);
-            }
-
-            // 3-3. 채팅 답변은 chatResponse만 유지. 위키 본문은 KnowledgePanel(topicId)에서 별도 렌더.
-            // Why: 나무위키 스타일 프롬프트로 본문이 600~1000단어가 되어 chat bubble에 inline 표시하면 가독성 저하.
-
-            return t;
-        });
-
-        // 신규 주제/별칭이 생성되었으므로 캐시 무효화
-        KeywordCache.invalidate();
-
-        topicId = savedTopic.id;
-        isNew = true;
-    } else {
-        // 캐시된 콘텐츠 반환
-        content = article!.content || "";
-        // 캐시된 경우 채팅 답변에는 개요 섹션만 미리보기로 노출 (전체 본문은 KnowledgePanel에서)
-        const overview = extractOverview(content);
-        answer = `**[ARCHIVE RETRIEVED]** *"${topic!.name}"*에 대한 기록을 발견했습니다.\n\n${overview}`;
-        topicId = topic!.id;
-    }
-
-    // 5. 탐사 기록(ShipLog) 업데이트 (Content DB - constella)
+async function touchShipLog(userId: string, topicId: string) {
     try {
-        await prismaContent.user.upsert({
-            where: { id: userId },
-            update: {},
-            create: { id: userId }
-        });
-
+        await prismaContent.user.upsert({ where: { id: userId }, update: {}, create: { id: userId } });
         await prismaContent.shipLog.upsert({
-            where: {
-                userId_topicId: {
-                    userId,
-                    topicId: topicId!
-                }
-            },
-            update: {
-                discoveredAt: new Date() // 발견 시간 업데이트
-            },
-            create: {
-                userId,
-                topicId: topicId!,
-                discoveredAt: new Date()
-            }
+            where: { userId_topicId: { userId, topicId } },
+            update: { discoveredAt: new Date() },
+            create: { userId, topicId, discoveredAt: new Date() },
         });
     } catch (e) {
         logger.error("[WikiEngine] ShipLog 업데이트 실패:", { error: e instanceof Error ? e.message : e });
     }
+}
 
-    return { answer, content, isNew, topicId: topicId! };
+async function registerAlias(aliasName: string, topicId: string, canonicalName: string) {
+    if (!aliasName || aliasName === canonicalName) return;
+    try {
+        await prismaContent.alias.upsert({
+            where: { name: aliasName },
+            update: {},
+            create: { name: aliasName, topicId },
+        });
+        KeywordCache.invalidate();
+    } catch { /* 중복 무시 */ }
+}
+
+/**
+ * 사용자의 질문을 처리합니다.
+ *
+ *   ① 사전 DB 조회 (모델 호출 없음) → 히트면 템플릿 응답으로 종료
+ *   ② 라우터 1콜 — 분류·이름·대화 답변
+ *   ③ canonicalName으로 재조회 → 히트면 템플릿 응답으로 종료
+ *   ④ Topic + 스텁 Article + Neo4j 노드를 만들고 즉시 반환
+ *   ⑤ 본문 생성은 응답 이후 백그라운드에서 (ensureArticle)
+ *
+ * ②와 ⑤ 사이의 틈이 이 설계의 핵심이다. 캐시 히트·후속질문·거부 세 경우 모두
+ * 본문 생성을 아예 호출하지 않는다.
+ */
+export async function processUserQuery(
+    userId: string,
+    query: string,
+    language: string = 'en',
+    chatHistory?: ChatHistoryEntry[]
+): Promise<WikiResponse> {
+    const normalizedName = query.trim().toLowerCase();
+
+    // ① 사전 조회
+    const pre = await findTopicByQuery(normalizedName, language);
+    const preArticle = pre?.articles?.[0];
+    if (pre && isFresh(preArticle)) {
+        await touchShipLog(userId, pre.id);
+        return { answer: archiveAnswer(pre.name, preArticle!.content!), isNew: false, topicId: pre.id };
+    }
+
+    // ② 라우터
+    const routed = await routeQuery(query, language, chatHistory);
+
+    // 거부: 아무것도 저장하지 않는다.
+    if (routed.intent === 'reject') {
+        return { answer: routed.chatResponse, isNew: false, topicId: "" };
+    }
+
+    // 후속질문: 본문을 건드리지 않고 참조 토픽만 갱신한다.
+    if (routed.intent === 'follow_up') {
+        const lastTopicId = await lastDiscussedTopicId(userId);
+        if (lastTopicId) {
+            await touchShipLog(userId, lastTopicId);
+            return { answer: routed.chatResponse, isNew: false, topicId: lastTopicId };
+        }
+        // 참조할 직전 토픽이 없다 (예: 대화 첫 턴). 답변만 돌려준다.
+        logger.info(`[WikiEngine] follow_up이지만 직전 토픽 기록이 없음: user=${userId}`);
+        return { answer: routed.chatResponse, isNew: false, topicId: "" };
+    }
+
+    // ③ canonicalName으로 재조회 — 사전 조회가 놓친 동의어를 여기서 잡는다.
+    const canonicalName = (routed.canonicalName || routed.topic).trim().toLowerCase();
+    if (!canonicalName) {
+        logger.warn(`[WikiEngine] new_topic인데 이름이 비어 있음`, { query });
+        return { answer: routed.chatResponse, isNew: false, topicId: "" };
+    }
+
+    const existingByCanonical = await prismaContent.topic.findUnique({
+        where: { name: canonicalName },
+        include: { articles: { where: { language } } },
+    });
+    const existingArticle = existingByCanonical?.articles?.[0];
+    if (existingByCanonical && isFresh(existingArticle)) {
+        await registerAlias(normalizedName, existingByCanonical.id, canonicalName);
+        await touchShipLog(userId, existingByCanonical.id);
+        return {
+            answer: archiveAnswer(existingByCanonical.name, existingArticle!.content!),
+            isNew: false,
+            topicId: existingByCanonical.id,
+        };
+    }
+
+    // ④ Topic·스텁·Neo4j 노드를 만들고 곧바로 응답한다.
+    const tags = normalizeTags(routed.tags);
+    const extractedTopicName = (routed.topic || canonicalName).trim();
+    const displayTitle = routed.title?.trim() || extractedTopicName;
+
+    const aliasNames = Array.from(new Set(
+        [normalizedName, extractedTopicName.toLowerCase()].filter(n => n && n !== canonicalName)
+    ));
+
+    const savedTopic = await withDualTransaction(async (prismaTx, neo4jTx) => {
+        const t = await prismaTx.topic.upsert({
+            where: { name: canonicalName },
+            update: {
+                tags: { connectOrCreate: tags.map(tag => ({ where: { name: tag }, create: { name: tag } })) },
+            },
+            create: {
+                name: canonicalName,
+                tags: { connectOrCreate: tags.map(tag => ({ where: { name: tag }, create: { name: tag } })) },
+            },
+        });
+
+        // 본문 없는 스텁. 표제만 먼저 채워 두면 그래프 조회가 번역을 다시 부르지 않는다.
+        await prismaTx.wikiArticle.upsert({
+            where: { topicId_language: { topicId: t.id, language } },
+            update: { title: displayTitle },
+            create: { topicId: t.id, language, title: displayTitle, content: null },
+        });
+
+        for (const aliasName of aliasNames) {
+            try {
+                await prismaTx.alias.upsert({
+                    where: { name: aliasName },
+                    update: {},
+                    create: { name: aliasName, topicId: t.id },
+                });
+            } catch { /* 중복 무시 */ }
+        }
+
+        // 노드만 먼저 만든다. 엣지는 본문의 [[링크]]에서 나오므로 ⑤에서 붙는다.
+        // 이 노드가 없으면 /api/graph의 MATCH가 비어 새 별이 아예 뜨지 않는다.
+        await syncArticleToGraph(neo4jTx, canonicalName, [], tags, t.id);
+
+        if (aliasNames.length > 0) {
+            await mergeAliasesToCanonical(neo4jTx, canonicalName, aliasNames);
+        }
+
+        return t;
+    });
+
+    KeywordCache.invalidate();
+    await touchShipLog(userId, savedTopic.id);
+
+    // ⑤ 사용자는 여기서 기다림을 끝낸다. 본문은 뒤따라 만들어진다.
+    void ensureArticle(canonicalName, language).catch(e => {
+        logger.error("[WikiEngine] 백그라운드 본문 생성 실패", {
+            canonicalName, language,
+            message: e instanceof Error ? e.message : String(e),
+        });
+    });
+
+    return {
+        answer: routed.chatResponse,
+        isNew: !existingByCanonical,
+        topicId: savedTopic.id,
+    };
 }

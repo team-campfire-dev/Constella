@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
 import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
-import { processUserQuery } from "@/lib/wiki-engine";
+import { ensureArticle } from "@/lib/wiki-engine";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const RATE_LIMIT_WINDOW_MS = 2000; // 2 seconds per request for topic viewing/generation
@@ -93,9 +93,20 @@ export async function GET(req: Request) {
         let article = topic.articles[0];
 
         if (!article || !article.content) {
-            // We have the topic name, so we can ask the WikiEngine to fill in this language
-            // processUserQuery handles finding the topic by name and adding the article
-            await processUserQuery(userId, topic.name, lang);
+            // We already know the canonical name, so the router has nothing to decide here —
+            // calling processUserQuery would spend a classification round trip (and a chat
+            // response nobody reads) to rediscover what this row already tells us.
+            // ensureArticle also de-duplicates against a generation already in flight from
+            // the chat path, so clicking through right after a discovery waits on that one
+            // instead of starting a second.
+            try {
+                await ensureArticle(topic.name, lang);
+            } catch (e) {
+                logger.error("Article generation failed", {
+                    topic: topic.name, lang,
+                    error: e instanceof Error ? e.message : e,
+                });
+            }
 
             // Re-fetch to get the new article
             // Check if id is present (it might be null if we searched by name)
