@@ -69,8 +69,11 @@ export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscov
                 const res = await fetch('/api/chat');
                 const data = await res.json();
                 if (data.success) {
-                    const loaded = data.data.map((msg: { id: string; role: string; content: string; timestamp: string }) => ({
+                    // topicId를 함께 복원해야 과거 메시지의 "위키 보기"가 유지된다.
+                    // isNew는 저장하지 않는다 — 새로고침 시점에는 더 이상 새 발견이 아니다.
+                    const loaded = data.data.map((msg: { id: string; role: string; content: string; topicId: string | null; timestamp: string }) => ({
                         ...msg,
+                        topicId: msg.topicId ?? undefined,
                         timestamp: new Date(msg.timestamp)
                     }));
                     setMessages(loaded);
