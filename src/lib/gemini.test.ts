@@ -3,14 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Set API key for tests before importing
 process.env.GOOGLE_GENERATIVE_AI_API_KEY = 'test-api-key';
 
-// Mock the @google/generative-ai module
+// Mock the @google/genai module.
+// 새 SDK는 모델별 핸들을 만들지 않고 ai.models.generateContent({model, contents, config})를
+// 직접 호출하며, 응답의 text는 메서드가 아니라 접근자다.
 const mockGenerateContent = vi.fn();
-vi.mock('@google/generative-ai', () => {
+vi.mock('@google/genai', () => {
     return {
-        GoogleGenerativeAI: class {
-            getGenerativeModel() {
-                return { generateContent: mockGenerateContent };
-            }
+        GoogleGenAI: class {
+            models = { generateContent: mockGenerateContent };
         },
     };
 });
@@ -48,7 +48,7 @@ describe('batchTranslate', () => {
         };
 
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const result = await batchTranslate(['Black Hole', 'Quantum Mechanics'], 'ko');
@@ -61,7 +61,7 @@ describe('batchTranslate', () => {
     it('마크다운 코드 블록으로 감싸진 응답 처리', async () => {
         const mockResponse = { 'Star': '별' };
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => '```json\n' + JSON.stringify(mockResponse) + '\n```' },
+            text: '```json\n' + JSON.stringify(mockResponse) + '\n```',
         });
 
         const result = await batchTranslate(['Star'], 'ko');
@@ -71,7 +71,7 @@ describe('batchTranslate', () => {
     it('plain 마크다운 블록 처리', async () => {
         const mockResponse = { 'Planet': '행성' };
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => '```\n' + JSON.stringify(mockResponse) + '\n```' },
+            text: '```\n' + JSON.stringify(mockResponse) + '\n```',
         });
 
         const result = await batchTranslate(['Planet'], 'ko');
@@ -86,7 +86,7 @@ describe('batchTranslate', () => {
 
     it('잘못된 JSON 응답 시 빈 객체 반환', async () => {
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => 'Invalid JSON' },
+            text: 'Invalid JSON',
         });
 
         const result = await batchTranslate(['Universe'], 'ko');
@@ -111,7 +111,7 @@ describe('generateWikiContent', () => {
         };
 
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const result = await generateWikiContent('Quantum Physics', 'ko');
@@ -129,7 +129,7 @@ describe('generateWikiContent', () => {
         };
 
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const history: ChatHistoryEntry[] = [
@@ -163,7 +163,7 @@ describe('generateWikiContent', () => {
         };
 
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const result = await generateWikiContent('Mars', 'en');
@@ -183,7 +183,7 @@ describe('generateWikiContent', () => {
         };
 
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const result = await generateWikiContent('Biology', 'en');
@@ -193,7 +193,7 @@ describe('generateWikiContent', () => {
     it('마크다운 코드 블록 처리', async () => {
         const mockResponse = { topic: 'AI', content: 'Artificial Intelligence is...', isFollowUp: false };
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => '```json\n' + JSON.stringify(mockResponse) + '\n```' },
+            text: '```json\n' + JSON.stringify(mockResponse) + '\n```',
         });
 
         const result = await generateWikiContent('AI', 'en');
@@ -204,7 +204,7 @@ describe('generateWikiContent', () => {
     it('앞뒤 공백/개행 포함 응답 처리', async () => {
         const mockResponse = { topic: 'Space', content: 'Space is big.' };
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => '\n\n  ```json\n' + JSON.stringify(mockResponse) + '\n```  \n' },
+            text: '\n\n  ```json\n' + JSON.stringify(mockResponse) + '\n```  \n',
         });
 
         const result = await generateWikiContent('Space', 'en');
@@ -214,7 +214,7 @@ describe('generateWikiContent', () => {
     it('배열 응답 언래핑 처리', async () => {
         const mockResponse = [{ topic: 'Biology', content: 'Study of life.' }];
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const result = await generateWikiContent('Biology', 'en');
@@ -224,7 +224,7 @@ describe('generateWikiContent', () => {
     it('response/result 래퍼 언래핑 처리', async () => {
         const mockResponse = { result: { topic: 'Chemistry', content: 'Study of matter.' } };
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const result = await generateWikiContent('Chemistry', 'en');
@@ -238,7 +238,7 @@ describe('generateWikiContent', () => {
             CanonicalName: 'World History',
         };
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const result = await generateWikiContent('History', 'en');
@@ -249,7 +249,7 @@ describe('generateWikiContent', () => {
 
     it('필수 필드(content) 누락 시 에러', async () => {
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify({ topic: 'Only Topic' }) },
+            text: JSON.stringify({ topic: 'Only Topic' }),
         });
 
         await expect(generateWikiContent('Test', 'en')).rejects.toThrow(
@@ -261,7 +261,7 @@ describe('generateWikiContent', () => {
         // retry 3회 모두 invalid JSON → 최종 SyntaxError가 outer catch로 전달되어
         // "AI가 올바른 JSON 형식을 반환하지 않았습니다." 메시지로 매핑된다.
         mockGenerateContent.mockResolvedValue({
-            response: { text: () => 'This is not JSON' },
+            text: 'This is not JSON',
         });
 
         await expect(generateWikiContent('Test', 'en')).rejects.toThrow(
@@ -272,9 +272,7 @@ describe('generateWikiContent', () => {
     it('코드 블록 앞뒤 텍스트 포함 응답 처리', async () => {
         const mockResponse = { topic: 'Physics', content: 'Gravity is a force.' };
         mockGenerateContent.mockResolvedValueOnce({
-            response: {
-                text: () => 'Here is the result:\n```json\n' + JSON.stringify(mockResponse) + '\n```\nHope this helps!',
-            },
+            text: 'Here is the result:\n```json\n' + JSON.stringify(mockResponse) + '\n```\nHope this helps!',
         });
 
         const result = await generateWikiContent('Physics', 'en');
@@ -289,7 +287,7 @@ describe('generateWikiContent', () => {
         };
 
         mockGenerateContent.mockResolvedValueOnce({
-            response: { text: () => JSON.stringify(mockResponse) },
+            text: JSON.stringify(mockResponse),
         });
 
         const result = await generateWikiContent('Math', 'en');

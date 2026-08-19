@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import logger from "@/lib/logger";
 
 export interface ChatHistoryEntry {
@@ -13,7 +13,16 @@ if (!apiKey) {
 }
 
 // API 키가 없으면 더미 값으로 초기화 (실제 호출 시 에러 발생)
-const genAI = new GoogleGenerativeAI(apiKey || "dummy");
+const genAI = new GoogleGenAI({ apiKey: apiKey || "dummy" });
+
+/**
+ * 사용할 모델. 프리뷰 모델을 코드 배포 없이 교체할 수 있도록 환경변수로 뺀다.
+ * 기본값은 지금까지 하드코딩되어 있던 값과 동일하다.
+ */
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
+
+/** 한 번의 생성 호출에 허용하는 시간. 이전 SDK의 RequestOptions.timeout과 같은 값. */
+const REQUEST_TIMEOUT_MS = 45000;
 
 async function sleep(ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -117,9 +126,6 @@ export async function generateWikiContent(topic: string, language: string = 'en'
         throw new Error("API 키가 없습니다. .env 파일을 확인해주세요.");
     }
 
-    // Gemini 3.0 Flash Preview 모델 사용
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
-
     const prompt = `
   Role: 당신은 지식 탐구 플랫폼 "Constella"의 AI 사서입니다.
   Task: 사용자 입력 "${topic}"에서 핵심 주제(Topic)를 추출하고, 그 주제에 대해 초보자도 이해하기 쉽게 설명해주세요.
@@ -192,12 +198,18 @@ export async function generateWikiContent(topic: string, language: string = 'en'
         }
 
         let parsed = await retryWithBackoff(async () => {
-            const result = await model.generateContent({
+            const result = await genAI.models.generateContent({
+                model: MODEL,
                 contents,
-                generationConfig: { responseMimeType: "application/json" }
-            }, { timeout: 45000 });
-            const response = await result.response;
-            let raw = response.text();
+                config: {
+                    responseMimeType: "application/json",
+                    httpOptions: { timeout: REQUEST_TIMEOUT_MS },
+                }
+            });
+            // 이전 SDK의 response.text()는 메서드였고, 새 SDK에서는 접근자다.
+            // 응답이 차단되면 예외 대신 undefined가 오므로 빈 문자열로 떨어뜨려
+            // 아래 JSON.parse가 SyntaxError를 내게 한다 — 기존 오류 경로와 동일하게 처리된다.
+            let raw = result.text ?? "";
 
             // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
             const firstBrace = raw.indexOf('{');
@@ -255,7 +267,6 @@ export const batchTranslate = async (topics: string[], targetLang: string) => {
         return result;
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
     const prompt = `
     Role: 전문 지식 백과사전 번역가
     Task: 다음 용어 목록을 ${targetLang === 'ko' ? '한국어(Korean)' : targetLang}로 번역하세요.
@@ -270,11 +281,15 @@ export const batchTranslate = async (topics: string[], targetLang: string) => {
 
     try {
         return await retryWithBackoff(async () => {
-            const result = await model.generateContent({
+            const result = await genAI.models.generateContent({
+                model: MODEL,
                 contents: [{ role: "user", parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json" }
-            }, { timeout: 45000 });
-            let text = result.response.text();
+                config: {
+                    responseMimeType: "application/json",
+                    httpOptions: { timeout: REQUEST_TIMEOUT_MS },
+                }
+            });
+            let text = result.text ?? "";
             // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
             const firstBrace = text.indexOf('{');
             const lastBrace = text.lastIndexOf('}');
