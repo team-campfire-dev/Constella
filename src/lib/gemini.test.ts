@@ -6,9 +6,13 @@ process.env.GOOGLE_GENERATIVE_AI_API_KEY = 'test-api-key';
 // Mock the @google/genai module.
 // 새 SDK는 모델별 핸들을 만들지 않고 ai.models.generateContent({model, contents, config})를
 // 직접 호출하며, 응답의 text는 메서드가 아니라 접근자다.
+// 모듈을 통째로 대체하면 Type·ThinkingLevel 열거형까지 사라져 gemini.ts가
+// 로드 시점에 터진다. 실제 모듈을 펼친 뒤 클라이언트 클래스만 덮는다.
 const mockGenerateContent = vi.fn();
-vi.mock('@google/genai', () => {
+vi.mock('@google/genai', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@google/genai')>();
     return {
+        ...actual,
         GoogleGenAI: class {
             models = { generateContent: mockGenerateContent };
         },
