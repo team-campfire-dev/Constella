@@ -56,6 +56,7 @@ vi.mock('@/lib/prisma-content', () => ({
             create: vi.fn(),
             count: vi.fn(),
             upsert: vi.fn(),
+            groupBy: vi.fn(),
         },
         chatHistory: {
             create: vi.fn(),
@@ -69,6 +70,7 @@ vi.mock('@/lib/prisma-content', () => ({
         achievement: {
             findMany: vi.fn(),
             create: vi.fn(),
+            groupBy: vi.fn(),
         },
         follow: {
             findUnique: vi.fn(),

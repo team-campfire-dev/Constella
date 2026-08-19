@@ -30,6 +30,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Invalid target user' }, { status: 400 });
         }
 
+        // 🛡️ Sentinel: Verify target user exists in Main DB before syncing to Content DB
+        const targetUserExists = await prisma.user.findUnique({
+            where: { id: targetUserId },
+            select: { id: true },
+        });
+
+        if (!targetUserExists) {
+            return NextResponse.json({ error: 'Target user not found' }, { status: 404 });
+        }
+
         // Ensure both users exist in Content DB
         await prismaContent.user.upsert({ where: { id: userId }, create: { id: userId }, update: {} });
         await prismaContent.user.upsert({ where: { id: targetUserId }, create: { id: targetUserId }, update: {} });

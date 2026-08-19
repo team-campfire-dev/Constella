@@ -176,6 +176,12 @@ export async function DELETE(
     const { id } = await params;
     const userId = session.user.id;
 
+    // 🛡️ Sentinel: Apply rate limiting
+    if (!checkRateLimit('expedition_delete', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: expedition_delete`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     try {
         const expedition = await prismaContent.expedition.findUnique({ where: { id } });
 

@@ -4,11 +4,18 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 1000;
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (!checkRateLimit('leaderboard_get', session.user.id, RATE_LIMIT_WINDOW_MS)) {
+        return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -33,39 +40,59 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ success: true, data: [], nextCursor: null });
         }
 
-        // 2. Calculate first discoveries and achievement counts for each user
-        const userMetrics = await Promise.all(
-            users.map(async (u) => {
-                let firstDiscoveries = 0;
-                if (u._count.shipLogs > 0) {
-                    const logs = await prismaContent.shipLog.findMany({
-                        where: { userId: u.id },
-                        select: { topicId: true, discoveredAt: true },
-                    });
-                    for (const log of logs) {
-                        const earlier = await prismaContent.shipLog.findFirst({
-                            where: {
-                                topicId: log.topicId,
-                                discoveredAt: { lt: log.discoveredAt },
-                            },
-                            select: { id: true },
-                        });
-                        if (!earlier) firstDiscoveries++;
-                    }
-                }
+        // 2. Calculate first discoveries and achievement counts for each user efficiently
+        const userIds = users.map((u) => u.id);
 
-                const achievementCount = await prismaContent.achievement.count({
-                    where: { userId: u.id },
-                });
+        // Fetch all relevant shipLogs for these users to extract topicIds
+        const allLogs = await prismaContent.shipLog.findMany({
+            where: { userId: { in: userIds } },
+            select: { userId: true, topicId: true, discoveredAt: true },
+        });
 
-                return {
-                    userId: u.id,
-                    totalDiscoveries: u._count.shipLogs,
-                    firstDiscoveries,
-                    achievementCount,
-                };
-            })
-        );
+        const topicIds = Array.from(new Set(allLogs.map((log) => log.topicId)));
+
+        // Pre-compute earliest discoveries only for the topics these users have discovered
+        const earliestDiscoveries = await prismaContent.shipLog.groupBy({
+            by: ['topicId'],
+            where: { topicId: { in: topicIds } },
+            _min: { discoveredAt: true },
+        });
+
+        const earliestDiscoveryMap = new Map<string, number>();
+        for (const ed of earliestDiscoveries) {
+            if (ed._min.discoveredAt) {
+                earliestDiscoveryMap.set(ed.topicId, ed._min.discoveredAt.getTime());
+            }
+        }
+
+        // Count first discoveries per user
+        const userFirstDiscoveriesMap = new Map<string, number>();
+        for (const log of allLogs) {
+            const earliestTime = earliestDiscoveryMap.get(log.topicId);
+            if (earliestTime !== undefined && log.discoveredAt.getTime() === earliestTime) {
+                const count = userFirstDiscoveriesMap.get(log.userId) || 0;
+                userFirstDiscoveriesMap.set(log.userId, count + 1);
+            }
+        }
+
+        // Pre-compute achievement counts per user, scoped to active users
+        const achievementsGrouped = await prismaContent.achievement.groupBy({
+            by: ['userId'],
+            where: { userId: { in: userIds } },
+            _count: { _all: true },
+        });
+
+        const achievementCountMap = new Map<string, number>();
+        for (const a of achievementsGrouped) {
+            achievementCountMap.set(a.userId, a._count._all);
+        }
+
+        const userMetrics = users.map((u) => ({
+            userId: u.id,
+            totalDiscoveries: u._count.shipLogs,
+            firstDiscoveries: userFirstDiscoveriesMap.get(u.id) || 0,
+            achievementCount: achievementCountMap.get(u.id) || 0,
+        }));
 
         // 3. Sort
         const sortKey =
@@ -88,9 +115,9 @@ export async function GET(req: NextRequest) {
         const nextCursor = page.length === take ? page[page.length - 1].userId : null;
 
         // 5. Fetch user details from main DB
-        const userIds = page.map(u => u.userId);
+        const pageUserIds = page.map(u => u.userId);
         const userDetails = await prisma.user.findMany({
-            where: { id: { in: userIds } },
+            where: { id: { in: pageUserIds } },
             select: { id: true, name: true, image: true },
         });
 

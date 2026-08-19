@@ -43,43 +43,60 @@ export default function ExplorerPage() {
     }[]>([]);
 
     useEffect(() => {
+        // dev/strict mode 더블 effect + 1s rate-limit이 결합되면 두 번째 요청이 429.
+        // AbortController로 첫 fetch를 취소해 stale setError가 data를 덮지 않게 함.
+        const abort = new AbortController();
+
         const fetchExplorer = async () => {
             try {
-                const res = await fetch(`/api/explorer/${explorerId}?lang=${locale}`);
+                const res = await fetch(`/api/explorer/${explorerId}?lang=${locale}`, { signal: abort.signal });
                 if (res.status === 404) {
                     setError('not_found');
                     return;
                 }
+                if (res.status === 429) {
+                    // Rate-limited 재시도: AbortController에 영향 없도록 별도 분기.
+                    // 단기 재시도 한 번이면 strict mode 더블 effect 흡수 가능.
+                    await new Promise(r => setTimeout(r, 1100));
+                    if (abort.signal.aborted) return;
+                    const retry = await fetch(`/api/explorer/${explorerId}?lang=${locale}`, { signal: abort.signal });
+                    if (!retry.ok) throw new Error('Failed to fetch');
+                    const json = await retry.json();
+                    if (json.success) setData(json.data);
+                    return;
+                }
                 if (!res.ok) throw new Error('Failed to fetch');
                 const json = await res.json();
-                if (json.success) {
-                    setData(json.data);
-                }
+                if (json.success) setData(json.data);
             } catch (err) {
+                if ((err as { name?: string }).name === 'AbortError') return;
                 console.error(err);
                 setError('error');
             } finally {
-                setLoading(false);
+                if (!abort.signal.aborted) setLoading(false);
             }
         };
 
         fetchExplorer();
+        return () => abort.abort();
     }, [explorerId, locale]);
 
     // Fetch achievements
     useEffect(() => {
+        const abort = new AbortController();
         const fetchAchievements = async () => {
             try {
-                const res = await fetch(`/api/achievements?userId=${explorerId}`);
+                const res = await fetch(`/api/achievements?userId=${explorerId}`, { signal: abort.signal });
+                if (res.status === 429) return; // 일시적, 화면 비치명적이라 무시
                 const json = await res.json();
-                if (json.success) {
-                    setAchievements(json.data.best);
-                }
+                if (json.success) setAchievements(json.data.best);
             } catch (e) {
+                if ((e as { name?: string }).name === 'AbortError') return;
                 console.error('Failed to fetch achievements:', e);
             }
         };
         fetchAchievements();
+        return () => abort.abort();
     }, [explorerId]);
 
     const handleFollowToggle = useCallback(async () => {

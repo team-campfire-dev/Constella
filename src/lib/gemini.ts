@@ -15,6 +15,37 @@ if (!apiKey) {
 // API 키가 없으면 더미 값으로 초기화 (실제 호출 시 에러 발생)
 const genAI = new GoogleGenerativeAI(apiKey || "dummy");
 
+async function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 지수 백오프로 비동기 함수를 재시도합니다.
+ * Why: Gemini API의 일시적 5xx, 네트워크 hiccup, 가끔 JSON 형식 어긋남은 단순 재시도로 흡수 가능.
+ */
+async function retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    options: { attempts?: number; baseDelayMs?: number; label?: string } = {}
+): Promise<T> {
+    const { attempts = 3, baseDelayMs = 400, label = 'gemini' } = options;
+    let lastError: unknown;
+    for (let i = 0; i < attempts; i++) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+            const isLast = i === attempts - 1;
+            if (isLast) break;
+            const delay = baseDelayMs * Math.pow(2, i);
+            logger.warn(`[${label}] 시도 ${i + 1}/${attempts} 실패, ${delay}ms 후 재시도`, {
+                message: error instanceof Error ? error.message : String(error)
+            });
+            await sleep(delay);
+        }
+    }
+    throw lastError;
+}
+
 /**
  * 배열이나 'response'/'result' 래퍼를 처리하기 위한 재귀적 언래핑
  */
@@ -50,6 +81,32 @@ function normalizeWikiResponse(obj: any): any {
     return newObj;
 }
 
+export interface WikiContentQuality {
+    ok: boolean;
+    headings: number;
+    links: number;
+    words: number;
+    reasons: string[];
+}
+
+/**
+ * 나무위키 스타일 프롬프트 산출물이 최소 구조를 갖췄는지 검사합니다.
+ * 임계값은 프롬프트의 "600~1000단어 / 섹션 ## 헤딩 / 8-15링크" 요구에서 안전 마진을 둠.
+ */
+export function evaluateWikiContent(content: string): WikiContentQuality {
+    if (!content) {
+        return { ok: false, headings: 0, links: 0, words: 0, reasons: ['empty'] };
+    }
+    const headings = (content.match(/^##\s/gm) || []).length;
+    const links = (content.match(/\[\[[^\]]+\]\]/g) || []).length;
+    const words = content.split(/\s+/).filter(Boolean).length;
+    const reasons: string[] = [];
+    if (headings < 3) reasons.push(`headings=${headings}<3`);
+    if (links < 5) reasons.push(`links=${links}<5`);
+    if (words < 400) reasons.push(`words=${words}<400`);
+    return { ok: reasons.length === 0, headings, links, words, reasons };
+}
+
 /**
  * 위키 콘텐츠를 생성합니다.
  * @param topic 주제
@@ -78,11 +135,21 @@ export async function generateWikiContent(topic: string, language: string = 'en'
      - content: 위키 아티클 내용 (Markdown, 객관적, [[links]] 포함).
      - chatResponse: 대화형 답변 (Markdown, [[links]] 포함).
      - isFollowUp: boolean. 이 질문이 이전 대화의 후속 질문인지 여부. 아래 6번 규칙을 참고하세요.
-  3. **Content**:
-     - content: 200단어 요약. 인사말 생략. **3-5개의 핵심 과학, 기술, 인문, 예술 등 관련 개념을 [[brackets]]으로 감싸세요**.
-     - chatResponse: 친근하고 대화체. 3개 이상의 관련 주제를 [[links]]로 포함하세요.
-     - **Link Note**: 링크는 **개별적이고 원자적인 개념**이어야 합니다 (예: "[[인공지능 윤리]]" 대신 "[[인공지능]], [[윤리]]" 사용). 서로 다른 개념을 하나의 링크로 합치지 마세요.
-     - **Format Warning**: 표준 마크다운 링크 문법(예: [text](url) 또는 [text](#id))을 사용하지 마세요. 오직 [[내부 링크]] 형식만 사용하세요.
+  3. **Content (나무위키 스타일 위키 아티클)**:
+     - **구조**: 반드시 마크다운 헤딩(\`##\`, \`###\`)으로 섹션을 명확히 구분하세요. 아래 템플릿을 기본으로 하되, 주제 성격에 따라 섹션을 가감하세요(예: 인물 → 생애/업적, 작품 → 줄거리/등장인물, 과학 개념 → 원리/응용). 무관한 섹션은 억지로 채우지 말고 생략하세요.
+       1. \`## 개요\` (영문: \`## Overview\`) — 주제를 한두 문단으로 압축 정의. 첫 문장은 "X는 ~이다." 형식의 명료한 정의로 시작.
+       2. \`## 상세\` (영문: \`## Details\`) — 핵심 개념, 작동 원리, 본질적 설명을 2-3 문단으로.
+       3. \`## 역사\` 또는 \`## 배경\` (영문: \`## History\` / \`## Background\`) — 등장 배경, 발전 과정. \`### 초기\`, \`### 현대\` 등 소제목 활용 가능 (해당될 때만).
+       4. \`## 특징\` / \`## 구성\` / \`## 종류\` 중 적절한 것 (영문: \`## Features\` / \`## Components\` / \`## Types\`) — 주요 특징·구성요소·분류를 \`###\` 소제목 또는 불릿 리스트로 구조화.
+       5. \`## 영향 및 의의\` 또는 \`## 응용\` (영문: \`## Impact\` / \`## Applications\`) — 관련 분야, 실제 활용, 사회·학문적 영향.
+       6. \`## 관련 문서\` (영문: \`## See also\`) — 인접 토픽을 \`- [[토픽명]]\` 불릿 리스트로 5개 이상 나열.
+     - **분량**: 전체 600~1000단어. 각 섹션은 최소 한 문단(2-3문장) 이상. 너무 짧으면 섹션을 분리하지 말 것.
+     - **링크**: 본문 전반에 **8-15개의 [[brackets]] 링크**를 자연스럽게 배치. 과학·기술·인문·예술 등 인접 개념을 폭넓게 연결하고, \`## 관련 문서\` 섹션에 핵심 링크를 다시 모아 제시.
+     - **문체**: 객관적·중립적 백과사전 톤. 한국어는 "~이다/한다"체(평서형 종결). 인사말("안녕하세요"), 자기소개, "~에 대해 설명해드리겠습니다" 같은 메타 문구 금지. 추측이나 주관적 평가는 "~로 알려져 있다", "~로 평가된다" 형태로 출처를 암시.
+     - **언어별 섹션명**: 위 헤딩 목록의 첫 번째(한국어) 또는 두 번째(영문)를 답변 언어에 맞게 일관되게 사용. 한 문서 안에서 한국어/영어 헤딩을 섞지 말 것.
+   - **chatResponse**: 친근하고 대화체. 3개 이상의 관련 주제를 [[links]]로 포함하세요. (채팅 답변이므로 \`##\` 헤딩은 사용하지 않고 평문 1-3문단으로 작성)
+   - **Link Note**: 링크는 **개별적이고 원자적인 개념**이어야 합니다 (예: "[[인공지능 윤리]]" 대신 "[[인공지능]], [[윤리]]"). 서로 다른 개념을 하나의 링크로 합치지 마세요.
+   - **Format Warning**: 표준 마크다운 링크 문법(\`[text](url)\`, \`[text](#id)\`)을 사용하지 마세요. 내부 링크는 오직 \`[[링크]]\` 형식만 허용. 이미지·외부 URL도 삽입 금지.
   4. **Accuracy & Hallucination Control**:
      - 신뢰할 수 있는 지식과 문헌에 기반하여 정보를 검증하세요.
      - 주제가 터무니없거나, 알려지지 않았거나, 모호한 경우 'chatResponse'에 명확히 정의할 수 없음을 명시하세요. 사실을 지어내지 마세요.
@@ -124,27 +191,30 @@ export async function generateWikiContent(topic: string, language: string = 'en'
             contents.push({ role: "user", parts: [{ text: prompt }] });
         }
 
-        const result = await model.generateContent({
-            contents,
-            generationConfig: { responseMimeType: "application/json" }
-        });
-        const response = await result.response;
-        text = response.text();
+        let parsed = await retryWithBackoff(async () => {
+            const result = await model.generateContent({
+                contents,
+                generationConfig: { responseMimeType: "application/json" }
+            }, { timeout: 45000 });
+            const response = await result.response;
+            let raw = response.text();
 
-        // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
-        const firstBrace = text.indexOf('{');
-        const firstBracket = text.indexOf('[');
-        const lastBrace = text.lastIndexOf('}');
-        const lastBracket = text.lastIndexOf(']');
+            // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
+            const firstBrace = raw.indexOf('{');
+            const firstBracket = raw.indexOf('[');
+            const lastBrace = raw.lastIndexOf('}');
+            const lastBracket = raw.lastIndexOf(']');
 
-        const start = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
-        const end = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
+            const start = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
+            const end = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
 
-        if (start !== -1 && end !== -1 && start < end) {
-            text = text.substring(start, end + 1);
-        }
+            if (start !== -1 && end !== -1 && start < end) {
+                raw = raw.substring(start, end + 1);
+            }
 
-        let parsed = JSON.parse(text);
+            text = raw;
+            return JSON.parse(raw);
+        }, { attempts: 3, baseDelayMs: 500, label: 'gemini.generateWikiContent' });
 
         parsed = unwrapGeminiResponse(parsed);
         parsed = normalizeWikiResponse(parsed);
@@ -199,18 +269,20 @@ export const batchTranslate = async (topics: string[], targetLang: string) => {
     `;
 
     try {
-        const result = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: "application/json" }
-        });
-        let text = result.response.text();
-        // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
-        const firstBrace = text.indexOf('{');
-        const lastBrace = text.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
-            text = text.substring(firstBrace, lastBrace + 1);
-        }
-        return JSON.parse(text) as Record<string, string>;
+        return await retryWithBackoff(async () => {
+            const result = await model.generateContent({
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: "application/json" }
+            }, { timeout: 45000 });
+            let text = result.response.text();
+            // JSON 추출 (마크다운 코드 블록이나 주변 텍스트 제거)
+            const firstBrace = text.indexOf('{');
+            const lastBrace = text.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+                text = text.substring(firstBrace, lastBrace + 1);
+            }
+            return JSON.parse(text) as Record<string, string>;
+        }, { attempts: 3, baseDelayMs: 500, label: 'gemini.batchTranslate' });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
         logger.error("Gemini 일괄 번역 오류", e);

@@ -79,6 +79,11 @@ export default function StarMapPage() {
                         onClose={() => { setChatOpen(false); setChatQuery(null); }}
                         initialQuery={chatQuery}
                         onTopicDiscovered={handleTopicDiscovered}
+                        onViewWiki={(topicId) => {
+                            setChatOpen(false);
+                            setChatQuery(null);
+                            setSelectedTopicId(topicId);
+                        }}
                     />
                 </div>
             </div>

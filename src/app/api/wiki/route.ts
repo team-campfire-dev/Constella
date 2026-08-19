@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
 import { withDualTransaction } from '@/lib/transaction';
 import { syncArticleToGraph } from '@/lib/graph';
@@ -39,14 +40,45 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Content is too long' }, { status: 400 });
         }
 
+        const normalizedTitle = title.trim().toLowerCase();
+
+        // 🛡️ Sentinel: Verify Access before allowing edit
+        // User must have discovered the topic individually or via an expedition
+        const existingTopic = await prismaContent.topic.findUnique({
+            where: { name: normalizedTitle },
+            select: { id: true }
+        });
+
+        if (existingTopic) {
+            const topicId = existingTopic.id;
+            const personalAccess = await prismaContent.shipLog.findUnique({
+                where: { userId_topicId: { userId, topicId } }
+            });
+
+            if (!personalAccess) {
+                const expeditionAccess = await prismaContent.expeditionShipLog.findFirst({
+                    where: {
+                        topicId,
+                        expedition: {
+                            status: 'active',
+                            members: { some: { userId } }
+                        }
+                    }
+                });
+
+                if (!expeditionAccess) {
+                    logger.warn(`Unauthorized Wiki POST edit attempt: user=${userId}, topic=${normalizedTitle}`);
+                    return NextResponse.json({ error: 'Forbidden. Undiscovered topic.' }, { status: 403 });
+                }
+            }
+        }
+
         // 2. 수동 제출을 위한 듀얼 트랜잭션
         // 참고: 새로운 Schema (Topic + WikiArticle)를 사용합니다.
         // Manual submission implies we treat 'title' as the Topic Name.
 
         await withDualTransaction(async (prismaTx, neo4jTx) => {
             // A. 주제(Topic) 찾기 또는 생성 (이름 정규화)
-            const normalizedTitle = title.trim().toLowerCase();
-
             // 이름으로 기존 Topic 확인
             const topic = await prismaTx.topic.upsert({
                 where: { name: normalizedTitle },

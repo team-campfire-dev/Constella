@@ -5,8 +5,13 @@ import { authOptions } from '@/lib/auth';
 import commsPubSub, { CommsEvent } from '@/lib/comms-pubsub';
 import logger from '@/lib/logger';
 import prismaContent from '@/lib/prisma-content';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
+
+// 합법적 SSE 재연결(strict mode 더블 effect, partner 전환, EventSource 자동 재시도)을
+// silent 429로 막던 60s 윈도우는 너무 가혹했음. DoS 보호용으로는 3s면 충분.
+const RATE_LIMIT_WINDOW_MS = 3000;
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -14,8 +19,15 @@ export async function GET(req: NextRequest) {
         return new Response('Unauthorized', { status: 401 });
     }
 
-    const channel = req.nextUrl.searchParams.get('channel') || 'global';
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting to prevent DoS via excessive SSE connections
+    if (!checkRateLimit('comms_stream', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: comms_stream`);
+        return new Response('Too many requests', { status: 429 });
+    }
+
+    const channel = req.nextUrl.searchParams.get('channel') || 'global';
 
     // 🛡️ Sentinel: Authorize channel access
     if (channel.startsWith('dm:')) {
@@ -36,6 +48,28 @@ export async function GET(req: NextRequest) {
         });
         if (!membership) {
             logger.warn(`Unauthorized SSE Expedition access attempt: user=${userId}, channel=${channel}`);
+            return new Response('Forbidden', { status: 403 });
+        }
+    } else if (channel.startsWith('topic:')) {
+        const topicId = channel.replace('topic:', '');
+        const [personalLog, sharedLog] = await Promise.all([
+            prismaContent.shipLog.findUnique({
+                where: { userId_topicId: { userId, topicId } }
+            }),
+            prismaContent.expeditionShipLog.findFirst({
+                where: {
+                    topicId,
+                    expedition: {
+                        members: {
+                            some: { userId }
+                        }
+                    }
+                }
+            })
+        ]);
+
+        if (!personalLog && !sharedLog) {
+            logger.warn(`Unauthorized SSE Topic access attempt: user=${userId}, channel=${channel}`);
             return new Response('Forbidden', { status: 403 });
         }
     }

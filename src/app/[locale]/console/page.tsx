@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useParams } from 'next/navigation';
 
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import { isSafeUrl } from '@/lib/url';
 import DashboardLayout from '@/components/DashboardLayout';
+import KnowledgePanel from '@/components/KnowledgePanel';
 import UserAvatar from '@/components/UserAvatar';
 import { useTranslations } from 'next-intl';
 import clsx from 'clsx';
@@ -17,6 +19,7 @@ interface Message {
     role: 'user' | 'assistant';
     content: string;
     timestamp: Date;
+    topicId?: string;
 }
 
 interface CommsMessage {
@@ -66,13 +69,13 @@ const DateSeparator = ({ date }: { date: Date }) => {
 };
 
 // Memoized Chat Message Item
-const ChatMessageItem = React.memo(({ msg, markdownComponents, t, isGrouped }: {
+const ChatMessageItem = React.memo(({ msg, markdownComponents, t, isGrouped, onViewWiki }: {
     msg: Message,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    markdownComponents: any,
+    markdownComponents: Components,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     t: any,
     isGrouped: boolean,
+    onViewWiki?: (topicId: string) => void,
 }) => (
     <div className={clsx(
         'flex gap-3',
@@ -120,6 +123,16 @@ const ChatMessageItem = React.memo(({ msg, markdownComponents, t, isGrouped }: {
                     <span className="whitespace-pre-wrap">{msg.content}</span>
                 )}
             </div>
+            {msg.role === 'assistant' && msg.topicId && onViewWiki && (
+                <button
+                    type="button"
+                    onClick={() => onViewWiki(msg.topicId!)}
+                    className="mt-2 px-2 py-1 bg-cyan-900/40 hover:bg-cyan-800/50 border border-cyan-600/40 rounded text-[10px] text-cyan-300 font-mono uppercase tracking-wider transition-colors inline-flex items-center gap-1.5"
+                >
+                    <span>📖</span>
+                    <span>{t('viewFullWiki')}</span>
+                </button>
+            )}
         </div>
     </div>
 ));
@@ -232,6 +245,7 @@ export default function ConsolePage() {
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [wikiTopicId, setWikiTopicId] = useState<string | null>(null);
 
     // Comms Chat State
     const [commsMessages, setCommsMessages] = useState<CommsMessage[]>([]);
@@ -584,7 +598,8 @@ export default function ConsolePage() {
                         id: (Date.now() + 1).toString(),
                         role: 'assistant',
                         content: data.content,
-                        timestamp: new Date()
+                        timestamp: new Date(),
+                        topicId: data.topicId || undefined,
                     };
                     setMessages(prev => [...prev, aiMsg]);
                 } else {
@@ -639,24 +654,19 @@ export default function ConsolePage() {
     }, [activeTab, handleSendMessage]);
 
     // Memoize the components map so ReactMarkdown doesn't re-render
-    const markdownComponents = useMemo(() => ({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        a: ({ ...props }: any) => {
+    const markdownComponents: Components = useMemo(() => ({
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        a: ({ node, href, children, ...rest }) => {
             // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
-            const isSafeUrl = (url?: string) => {
-                if (!url) return true;
-                const lowerUrl = url.trim().toLowerCase();
-                return !lowerUrl.startsWith('javascript:') && !lowerUrl.startsWith('vbscript:') && !lowerUrl.startsWith('data:');
-            };
-
-            const safeHref = isSafeUrl(props.href) ? props.href : '#';
+            const safeHref = isSafeUrl(href) ? href : '#';
 
             return (
                 <span
                     className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4"
                     onClick={(e) => handleMarkdownLinkClick(e, safeHref)}
+                    {...rest}
                 >
-                    {props.children}
+                    {children}
                 </span>
             );
         }
@@ -714,6 +724,7 @@ export default function ConsolePage() {
                     markdownComponents={markdownComponents}
                     t={t}
                     isGrouped={isGrouped}
+                    onViewWiki={setWikiTopicId}
                 />
             );
         });
@@ -1011,6 +1022,11 @@ export default function ConsolePage() {
                     </div>
                 </div>
             </div>
+            <KnowledgePanel
+                topicId={wikiTopicId}
+                onClose={() => setWikiTopicId(null)}
+                onNavigate={(id) => setWikiTopicId(id)}
+            />
         </DashboardLayout>
     );
 }

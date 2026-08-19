@@ -2,8 +2,62 @@
 import prismaContent from '@/lib/prisma-content'; // Content DB
 import { withDualTransaction } from '@/lib/transaction';
 import { syncArticleToGraph, mergeAliasesToCanonical } from '@/lib/graph';
-import { generateWikiContent, ChatHistoryEntry } from '@/lib/gemini';
+import { generateWikiContent, evaluateWikiContent, ChatHistoryEntry } from '@/lib/gemini';
 import logger from "@/lib/logger";
+
+/**
+ * 위키 본문에서 첫 번째 ## 섹션(보통 "개요"/"Overview")을 추출해 채팅 미리보기로 사용합니다.
+ * 캐시 히트(Gemini 미호출) 경로에서 chat bubble이 빈약해지지 않도록 함.
+ */
+function extractOverview(content: string): string {
+    if (!content) return '';
+    const match = content.match(/##\s*[^\n]*\n([\s\S]*?)(?=\n##\s|$)/);
+    if (match) return match[1].trim();
+    // 헤딩이 없으면 첫 문단
+    const firstPara = content.split(/\n\s*\n/)[0];
+    return firstPara.trim();
+}
+
+/**
+ * Fuzzy 후보 중 쿼리와 가장 유사한 항목을 점수화하여 반환. 임계값 미달이면 null.
+ * Why: 기존 candidates[0] 무조건 채택은 오결합 위험. 정규화된 prefix 길이 / 길이 차이를 기준.
+ */
+function pickBestFuzzyMatch<T extends { name: string }>(query: string, candidates: T[]): T | null {
+    if (candidates.length === 0) return null;
+    const q = query.trim().toLowerCase();
+    let best: { item: T; score: number } | null = null;
+    for (const item of candidates) {
+        const name = item.name.toLowerCase();
+        if (name === q) return item; // 완전 일치
+        let score = 0;
+        if (name.startsWith(q)) score += q.length * 2;
+        else if (q.startsWith(name)) score += name.length * 2;
+        else if (name.includes(q)) score += q.length;
+        else if (q.includes(name)) score += name.length;
+        // 길이 차이가 클수록 감점
+        score -= Math.abs(name.length - q.length);
+        if (!best || score > best.score) best = { item, score };
+    }
+    // 최소 점수 임계: 쿼리 길이의 절반 이상 매칭되어야 신뢰
+    const threshold = Math.max(2, Math.floor(q.length / 2));
+    return best && best.score >= threshold ? best.item : null;
+}
+
+/**
+ * Gemini가 반환한 태그를 정규화하고 중복을 제거합니다.
+ */
+function normalizeTags(tags: string[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const raw of tags) {
+        if (typeof raw !== 'string') continue;
+        const normalized = raw.trim().toLowerCase();
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        result.push(normalized);
+    }
+    return result;
+}
 
 interface CachedKeyword {
     word: string;
@@ -138,7 +192,8 @@ export async function processUserQuery(userId: string, query: string, language: 
     }
 
     // 1-2. Fuzzy 사전 조회 (Gemini 호출 전 유사 Topic 검색)
-    // 정확 일치가 실패한 경우, DB에서 유사한 주제를 검색하여 중복 생성 방지
+    // 정확 일치가 실패한 경우, DB에서 유사한 주제를 검색하여 중복 생성 방지.
+    // 점수화로 가장 유사한 후보만 채택. 임계값 미달이면 신규 생성으로 진행.
     if (!topic && normalizedName.length >= 3) {
         const candidates = await prismaContent.topic.findMany({
             where: {
@@ -151,8 +206,9 @@ export async function processUserQuery(userId: string, query: string, language: 
             take: 5,
         });
 
-        if (candidates.length > 0) {
-            topic = candidates[0];
+        const bestTopic = pickBestFuzzyMatch(normalizedName, candidates);
+        if (bestTopic) {
+            topic = bestTopic;
         } else {
             // 별칭에서도 fuzzy 검색
             const aliasCandidates = await prismaContent.alias.findMany({
@@ -162,8 +218,9 @@ export async function processUserQuery(userId: string, query: string, language: 
                 include: { topic: { include: { articles: { where: { language } } } } },
                 take: 5,
             });
-            if (aliasCandidates.length > 0) {
-                topic = aliasCandidates[0].topic;
+            const bestAlias = pickBestFuzzyMatch(normalizedName, aliasCandidates);
+            if (bestAlias) {
+                topic = bestAlias.topic;
             }
         }
     }
@@ -189,7 +246,42 @@ export async function processUserQuery(userId: string, query: string, language: 
         logger.info(`[WikiEngine] 콘텐츠 생성 중: ${query} (언어: ${language})`);
 
         // 3. AI 콘텐츠 생성 (대화 이력 포함)
-        const generated = await generateWikiContent(query, language, chatHistory);
+        let generated = await generateWikiContent(query, language, chatHistory);
+
+        // 3-0. 품질 검증: 나무위키 스타일 프롬프트가 요구하는 구조를 만족하는지 확인.
+        // Unknown/Follow-up 경로는 검증 대상이 아님 (위키 본문 저장 자체를 안 함).
+        if (generated.topic !== 'Unknown' && !generated.isFollowUp) {
+            const quality = evaluateWikiContent(generated.content);
+            if (!quality.ok) {
+                logger.warn(`[WikiEngine] 콘텐츠 품질 미달, 1회 재생성 시도`, {
+                    query, language, reasons: quality.reasons,
+                    headings: quality.headings, links: quality.links, words: quality.words,
+                });
+                // 재생성: 부족한 점을 알려주는 보강 지시를 history에 추가
+                const retryHint = `이전 응답이 다음 기준에 미달했습니다: ${quality.reasons.join(', ')}. 반드시 \`##\` 헤딩 3개 이상, [[링크]] 5개 이상, 400단어 이상으로 다시 작성해주세요.`;
+                const retryHistory: ChatHistoryEntry[] = [
+                    ...(chatHistory ?? []),
+                    { role: 'user', content: query },
+                    { role: 'assistant', content: generated.content || '(empty)' },
+                    { role: 'user', content: retryHint },
+                ];
+                try {
+                    const retried = await generateWikiContent(query, language, retryHistory);
+                    const retriedQuality = evaluateWikiContent(retried.content);
+                    if (retriedQuality.ok || retriedQuality.words > quality.words) {
+                        generated = retried;
+                    } else {
+                        logger.warn(`[WikiEngine] 재생성도 품질 미달, 첫 결과 유지`, {
+                            firstWords: quality.words, retryWords: retriedQuality.words,
+                        });
+                    }
+                } catch (e) {
+                    logger.warn(`[WikiEngine] 재생성 실패, 첫 결과 유지`, {
+                        message: e instanceof Error ? e.message : String(e),
+                    });
+                }
+            }
+        }
 
         // [추가] 마크다운 링크 정규화
         // AI가 생성한 [Text](URL) 형식을 내부 링크 형식 [[Text]]로 변환
@@ -246,7 +338,7 @@ export async function processUserQuery(userId: string, query: string, language: 
         const canonicalName = generated.canonicalName || generated.topic;
         const mainTopicName = canonicalName.trim().toLowerCase(); // DB 키
         const extractedTopicName = generated.topic.trim(); // 원래 추출된 주제
-        const tags = generated.tags || [];
+        const tags = normalizeTags(generated.tags || []);
 
         // Post-Generation 중복 검사: Gemini가 반환한 canonicalName으로 기존 Topic 확인
         const existingByCanonical = await prismaContent.topic.findUnique({
@@ -258,7 +350,8 @@ export async function processUserQuery(userId: string, query: string, language: 
             existingByCanonical.articles[0].updatedAt >= threeMonthsAgo) {
             // 기존 캐시 사용, 별칭만 추가 등록
             content = existingByCanonical.articles[0].content;
-            answer = `**[ARCHIVE RETRIEVED]**\n\n기록 보관소에서 *"${existingByCanonical.name}"*에 대한 데이터를 찾았습니다.\n\n---\n\n${content}`;
+            const overview = extractOverview(content);
+            answer = `**[ARCHIVE RETRIEVED]** *"${existingByCanonical.name}"*에 대한 기록을 발견했습니다.\n\n${overview}`;
             topicId = existingByCanonical.id;
 
             // 별칭 등록 (user query -> existing topic)
@@ -321,8 +414,15 @@ export async function processUserQuery(userId: string, query: string, language: 
 
             if (patternParts.length > 0) {
                 // 선별된 후보에 대해서만 정규식 매칭 수행 (성능 대폭 향상)
+                // 위키 관례: 같은 키워드는 첫 등장에서만 [[link]] 처리해 시각적 노이즈와 그래프 가중치 왜곡 방지
                 const combinedPattern = new RegExp(`(${patternParts.join('|')})`, 'gi');
-                masked = masked.replace(combinedPattern, '[[$1]]');
+                const seen = new Set<string>();
+                masked = masked.replace(combinedPattern, (match) => {
+                    const key = match.toLowerCase().replace(/\s+/g, '');
+                    if (seen.has(key)) return match;
+                    seen.add(key);
+                    return `[[${match}]]`;
+                });
             }
 
             // 4. 플레이스홀더 복원
@@ -457,9 +557,8 @@ export async function processUserQuery(userId: string, query: string, language: 
                 await mergeAliasesToCanonical(neo4jTx, mainTopicName, aliasesToMerge);
             }
 
-            // 3-3. UI 피드백: 위키 콘텐츠 추가
-            // 사용자가 채팅 응답 하단에 전체 내용을 보여달라고 요청함.
-            answer += `\n\n---\n\n${content}`;
+            // 3-3. 채팅 답변은 chatResponse만 유지. 위키 본문은 KnowledgePanel(topicId)에서 별도 렌더.
+            // Why: 나무위키 스타일 프롬프트로 본문이 600~1000단어가 되어 chat bubble에 inline 표시하면 가독성 저하.
 
             return t;
         });
@@ -472,8 +571,9 @@ export async function processUserQuery(userId: string, query: string, language: 
     } else {
         // 캐시된 콘텐츠 반환
         content = article!.content || "";
-        // 캐시된 경우 채팅 답변 생성
-        answer = `**[ARCHIVE RETRIEVED]**\n\n기록 보관소에서 *"${topic!.name}"*에 대한 데이터를 찾았습니다.\n\n---\n\n${content}`;
+        // 캐시된 경우 채팅 답변에는 개요 섹션만 미리보기로 노출 (전체 본문은 KnowledgePanel에서)
+        const overview = extractOverview(content);
+        answer = `**[ARCHIVE RETRIEVED]** *"${topic!.name}"*에 대한 기록을 발견했습니다.\n\n${overview}`;
         topicId = topic!.id;
     }
 

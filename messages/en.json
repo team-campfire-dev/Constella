@@ -136,6 +136,7 @@
         "roleAI": "AI Librarian",
         "processing": "Processing Query...",
         "connectionLost": "⚠️ Connection Lost. The Ship's AI is offline.",
+        "viewFullWiki": "View Full Wiki",
         "inputPlaceholder": "Type your query...",
         "transmit": "Transmit",
         "commsLive": "LIVE",

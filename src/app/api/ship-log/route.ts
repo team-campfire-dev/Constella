@@ -3,6 +3,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 1000;
 
 export async function GET(request: Request) {
     const session = await getServerSession(authOptions);
@@ -10,6 +13,10 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const userId = session.user.id;
+
+    if (!checkRateLimit('ship_log_get', userId, RATE_LIMIT_WINDOW_MS)) {
+        return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
     const { searchParams } = new URL(request.url);
     const lang = searchParams.get('lang') || 'en';
 

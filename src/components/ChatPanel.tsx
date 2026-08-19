@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import { isSafeUrl } from '@/lib/url';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 
@@ -19,6 +20,7 @@ interface ChatPanelProps {
     onClose: () => void;
     initialQuery?: string | null;
     onTopicDiscovered?: (topicId: string, topicName: string, isNew: boolean) => void;
+    onViewWiki?: (topicId: string) => void;
 }
 
 // Format wiki links into clickable spans
@@ -28,7 +30,7 @@ const formatLinks = (text: string) => {
     });
 };
 
-export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscovered }: ChatPanelProps) {
+export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscovered, onViewWiki }: ChatPanelProps) {
     const t = useTranslations('Console');
     const params = useParams();
     const locale = params.locale as string;
@@ -155,22 +157,16 @@ export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscov
     }, [handleSendMessage, input]);
 
     // Markdown renderer
-    const markdownComponents = useMemo(() => ({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        a: ({ ...props }: any) => {
+    const markdownComponents: Components = useMemo(() => ({
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        a: ({ node, href, children, ...rest }) => {
             // 🛡️ Sentinel: Sanitize external URLs to prevent XSS via javascript:/data:/vbscript:
             // even though ChatPanel currently renders a span without href, this protects future changes
-            const isSafeUrl = (url?: string) => {
-                if (!url) return true;
-                const lowerUrl = url.trim().toLowerCase();
-                return !lowerUrl.startsWith('javascript:') && !lowerUrl.startsWith('vbscript:') && !lowerUrl.startsWith('data:');
-            };
-
-            const safeHref = isSafeUrl(props.href) ? props.href : '#';
+            const safeHref = isSafeUrl(href) ? href : '#';
 
             return (
-                <span className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4" data-href={safeHref}>
-                    {props.children}
+                <span className="text-cyan-400 hover:text-cyan-200 cursor-pointer underline decoration-cyan-500/50 decoration-dotted underline-offset-4" data-href={safeHref} {...rest}>
+                    {children}
                 </span>
             );
         }
@@ -229,6 +225,16 @@ export default function ChatPanel({ isOpen, onClose, initialQuery, onTopicDiscov
                                 </div>
                             ) : (
                                 <span className="whitespace-pre-wrap">{msg.content}</span>
+                            )}
+                            {msg.role === 'assistant' && msg.topicId && onViewWiki && (
+                                <button
+                                    type="button"
+                                    onClick={() => onViewWiki(msg.topicId!)}
+                                    className="mt-2 px-2 py-1 bg-cyan-900/40 hover:bg-cyan-800/50 border border-cyan-600/40 rounded text-[10px] text-cyan-300 font-mono uppercase tracking-wider transition-colors flex items-center gap-1.5"
+                                >
+                                    <span>📖</span>
+                                    <span>{t('viewFullWiki')}</span>
+                                </button>
                             )}
                             {msg.isNew && (
                                 <div className="mt-1.5 px-1.5 py-0.5 bg-emerald-900/30 border border-emerald-600/30 rounded text-[10px] text-emerald-400 inline-block">

@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import prismaContent from "@/lib/prisma-content";
 import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const RATE_LIMIT_WINDOW_MS = 2000; // 2 seconds per request
 
 // GET /api/feed — Discovery Feed (all explorers or crew only)
 export async function GET(req: NextRequest) {
@@ -13,6 +16,13 @@ export async function GET(req: NextRequest) {
     }
 
     const userId = session.user.id;
+
+    // 🛡️ Sentinel: Apply rate limiting to prevent DoS
+    if (!checkRateLimit('feed_get', userId, RATE_LIMIT_WINDOW_MS)) {
+        logger.warn(`Rate limit exceeded for user: ${userId} on endpoint: feed_get`);
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     const { searchParams } = new URL(req.url);
     const filter = searchParams.get('filter') || 'all'; // 'all' or 'crew'
     const lang = searchParams.get('lang') || 'en';
