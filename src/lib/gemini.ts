@@ -63,24 +63,60 @@ export interface WikiContentQuality {
     links: number;
     words: number;
     reasons: string[];
+    /**
+     * 세 지표를 각자의 임계값 대비 비율로 정규화해 합산한 값 (0~3).
+     * 임계를 넘은 몫은 1.0으로 자른다 — 링크를 잔뜩 박아 헤딩 부족을 상쇄하는 것을 막기 위해서다.
+     * 재생성 결과를 채택할지 판단할 때 쓴다.
+     */
+    score: number;
 }
 
+const MIN_HEADINGS = 3;
+const MIN_LINKS = 5;
+
 /**
- * 나무위키 스타일 프롬프트 산출물이 최소 구조를 갖췄는지 검사합니다.
- * 임계값은 프롬프트의 "600~1000단어 / 섹션 ## 헤딩 / 8-15링크" 요구에서 안전 마진을 둠.
+ * 분량 임계는 언어별로 다르다.
+ *
+ * 단어 수를 공백으로 세므로 한국어에서는 사실상 '어절'이 세어진다. 골든 셋 실측에서
+ * 같은 프롬프트가 영어 중앙값 1025단어, 한국어 중앙값 548어절을 만들었다 — 약 1.9배 차이다.
+ * 하나의 임계값을 쓰면 한국어 문서에만 두 배의 분량을 요구하는 셈이 되고, 실제로
+ * 재설계 전 품질 미달 4건은 전부 한국어였으며 사유도 전부 words 단독이었다.
+ * 헤딩 5~6개와 링크 19~28개로 구조는 충분했는데 분량 판정만 걸린 것이다.
+ *
+ * 임계는 각 언어의 실측 분포 최소값 아래에 둔다. 멀쩡한 문서는 통과시키고 확연히
+ * 짧은 것만 잡는 위치다. (실측 최소: ko 429어절 / en 834단어)
  */
-export function evaluateWikiContent(content: string): WikiContentQuality {
+const MIN_WORDS_BY_LANGUAGE: Record<string, number> = { ko: 300 };
+const MIN_WORDS_DEFAULT = 500;
+
+/** 임계를 넘어선 몫은 버린다. 한 지표의 과잉이 다른 지표의 부족을 덮지 못하게. */
+const capped = (value: number, threshold: number) => Math.min(1, value / threshold);
+
+/**
+ * 위키 본문이 최소 구조를 갖췄는지 검사합니다.
+ * 임계값은 프롬프트의 "600~1000단어 / 섹션 ## 헤딩 / 8-15링크" 요구에서 안전 마진을 둔 것.
+ */
+export function evaluateWikiContent(content: string, language: string = 'en'): WikiContentQuality {
+    const minWords = MIN_WORDS_BY_LANGUAGE[language] ?? MIN_WORDS_DEFAULT;
+
     if (!content) {
-        return { ok: false, headings: 0, links: 0, words: 0, reasons: ['empty'] };
+        return { ok: false, headings: 0, links: 0, words: 0, reasons: ['empty'], score: 0 };
     }
+
     const headings = (content.match(/^##\s/gm) || []).length;
     const links = (content.match(/\[\[[^\]]+\]\]/g) || []).length;
     const words = content.split(/\s+/).filter(Boolean).length;
+
     const reasons: string[] = [];
-    if (headings < 3) reasons.push(`headings=${headings}<3`);
-    if (links < 5) reasons.push(`links=${links}<5`);
-    if (words < 400) reasons.push(`words=${words}<400`);
-    return { ok: reasons.length === 0, headings, links, words, reasons };
+    if (headings < MIN_HEADINGS) reasons.push(`headings=${headings}<${MIN_HEADINGS}`);
+    if (links < MIN_LINKS) reasons.push(`links=${links}<${MIN_LINKS}`);
+    if (words < minWords) reasons.push(`words=${words}<${minWords}`);
+
+    const score = Math.round(
+        (capped(headings, MIN_HEADINGS) + capped(links, MIN_LINKS) + capped(words, minWords)) * 1000
+    ) / 1000;
+
+    return { ok: reasons.length === 0, headings, links, words, reasons, score };
 }
 
 // ════════════════════════════════════════════════════════════════

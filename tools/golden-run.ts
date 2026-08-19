@@ -110,7 +110,7 @@ export interface Observation {
     content: string | null;
     contentChars: number;
     contentHash: string | null;
-    quality: { ok: boolean; headings: number; links: number; words: number; reasons: string[] } | null;
+    quality: { ok: boolean; headings: number; links: number; words: number; reasons: string[]; score?: number } | null;
 }
 
 export interface Aggregates {
@@ -186,7 +186,7 @@ async function observe(c: GoldenCase): Promise<Observation> {
 
     try {
         const p = await probe(c);
-        const quality = p.content ? evaluateWikiContent(p.content) : null;
+        const quality = p.content ? evaluateWikiContent(p.content, c.language) : null;
 
         return {
             ...base,

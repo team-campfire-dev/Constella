@@ -17,7 +17,7 @@ vi.mock('@/lib/gemini', () => ({
     batchTranslate: vi.fn(),
     // Stub: 기본은 항상 통과시켜 재생성 분기를 타지 않도록.
     // (판정 로직 자체는 gemini.test.ts의 evaluateWikiContent 단위 테스트에서 검증)
-    evaluateWikiContent: vi.fn(() => ({ ok: true, headings: 5, links: 10, words: 600, reasons: [] })),
+    evaluateWikiContent: vi.fn(() => ({ ok: true, headings: 5, links: 10, words: 600, reasons: [], score: 3 })),
 }));
 
 import prismaContent from '@/lib/prisma-content';
@@ -118,7 +118,7 @@ function baseMocks() {
     mockedPrisma.user.upsert.mockResolvedValue({} as any);
     mockedPrisma.shipLog.upsert.mockResolvedValue({} as any);
     mockedPrisma.chatHistory.findFirst.mockResolvedValue(null as any);
-    mockedEvaluate.mockReturnValue({ ok: true, headings: 5, links: 10, words: 600, reasons: [] });
+    mockedEvaluate.mockReturnValue({ ok: true, headings: 5, links: 10, words: 600, reasons: [], score: 3 });
     mockedBody.mockResolvedValue('## Overview\n생성된 본문 [[입자]]');
     setupDualTransaction();
 }
@@ -369,8 +369,8 @@ describe('ensureArticle', () => {
         });
         mockTopicsByName({ 'quantum mechanics': stub });
         mockedEvaluate
-            .mockReturnValueOnce({ ok: false, headings: 1, links: 2, words: 100, reasons: ['words=100<400'] })
-            .mockReturnValueOnce({ ok: true, headings: 5, links: 10, words: 700, reasons: [] });
+            .mockReturnValueOnce({ ok: false, headings: 1, links: 2, words: 100, reasons: ['words=100<300'], score: 0.9 })
+            .mockReturnValueOnce({ ok: true, headings: 5, links: 10, words: 700, reasons: [], score: 3 });
         mockedBody
             .mockResolvedValueOnce('짧은 본문')
             .mockResolvedValueOnce('## Overview\n충분히 긴 본문 [[입자]]');
@@ -379,9 +379,29 @@ describe('ensureArticle', () => {
 
         expect(mockedBody).toHaveBeenCalledTimes(2);
         expect(mockedBody.mock.calls[1][0]).toMatchObject({
-            deficiency: { reasons: ['words=100<400'], previous: '짧은 본문' },
+            deficiency: { reasons: ['words=100<300'], previous: '짧은 본문' },
         });
         expect(body).toContain('충분히 긴 본문');
+    });
+
+    it('재생성이 길기만 하고 구조가 퇴행하면 채택하지 않는다', async () => {
+        const stub = makeTopic({
+            articles: [{ id: 'a', topicId: 'topic-1', title: 'T', content: null, language: 'en', updatedAt: FRESH }],
+        });
+        mockTopicsByName({ 'quantum mechanics': stub });
+        // 첫 결과: 분량만 살짝 모자람. 재생성: 단어는 늘었지만 헤딩·링크가 무너짐.
+        // 단어 수만 비교하던 옛 기준이라면 두 번째가 이겼다.
+        mockedEvaluate
+            .mockReturnValueOnce({ ok: false, headings: 6, links: 20, words: 480, reasons: ['words=480<500'], score: 2.96 })
+            .mockReturnValueOnce({ ok: false, headings: 1, links: 2, words: 900, reasons: ['headings=1<3', 'links=2<5'], score: 1.73 });
+        mockedBody
+            .mockResolvedValueOnce('## Overview\n구조는 좋지만 조금 짧은 본문 [[입자]]')
+            .mockResolvedValueOnce('장황하지만 구조가 무너진 본문');
+
+        const body = await ensureArticle('Quantum Mechanics', 'en');
+
+        expect(body).toContain('구조는 좋지만');
+        expect(body).not.toContain('장황하지만');
     });
 
     it('본문 저장 후 [[링크]]를 엣지로 동기화한다', async () => {

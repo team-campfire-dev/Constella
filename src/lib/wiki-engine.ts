@@ -284,7 +284,7 @@ async function buildArticle(name: string, language: string): Promise<string> {
     // 품질 게이트. 미달이면 1회만 다시 시도한다.
     // 보강 지시는 대화 이력이 아니라 단일 턴으로 전달된다 — 본문 생성이
     // 사용자와 무관한 함수로 남아야 위쪽 in-flight 공유가 정당하다.
-    const quality = evaluateWikiContent(body);
+    const quality = evaluateWikiContent(body, language);
     if (!quality.ok) {
         logger.warn(`[WikiEngine] 본문 품질 미달, 1회 재생성 시도`, {
             name, language, reasons: quality.reasons,
@@ -298,12 +298,15 @@ async function buildArticle(name: string, language: string): Promise<string> {
                 language,
                 deficiency: { reasons: quality.reasons, previous: body },
             });
-            const retriedQuality = evaluateWikiContent(retried);
-            if (retriedQuality.ok || retriedQuality.words > quality.words) {
+            const retriedQuality = evaluateWikiContent(retried, language);
+            // 단어 수 하나로 비교하면 헤딩과 링크가 퇴행해도 장황해지기만 하면 이긴다.
+            // 세 지표를 정규화한 종합 점수로 비교해 그 경로를 막는다.
+            if (retriedQuality.ok || retriedQuality.score > quality.score) {
                 body = retried;
             } else {
-                logger.warn(`[WikiEngine] 재생성도 품질 미달, 첫 결과 유지`, {
-                    firstWords: quality.words, retryWords: retriedQuality.words,
+                logger.warn(`[WikiEngine] 재생성이 더 낫지 않아 첫 결과 유지`, {
+                    firstScore: quality.score, retryScore: retriedQuality.score,
+                    firstReasons: quality.reasons, retryReasons: retriedQuality.reasons,
                 });
             }
         } catch (e) {

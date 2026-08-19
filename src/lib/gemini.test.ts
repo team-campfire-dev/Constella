@@ -285,45 +285,80 @@ describe('generateArticleBody', () => {
 });
 
 describe('evaluateWikiContent', () => {
+    /** 지정한 어절/단어 수와 헤딩·링크를 갖춘 본문을 만든다. */
+    const body = (words: number, headings = 3, links = 5) => {
+        const heads = Array.from({ length: headings }, (_, i) => `## 섹션${i}`).join('\n');
+        const linkStr = Array.from({ length: links }, (_, i) => `[[링크${i}]]`).join(' ');
+        // 헤딩과 링크도 공백으로 분리되므로 나머지를 채운다
+        const fillerCount = Math.max(0, words - headings * 2 - links);
+        return [heads, linkStr, '단어 '.repeat(fillerCount)].join('\n');
+    };
+
     it('빈 콘텐츠는 실패', () => {
         const q = evaluateWikiContent('');
         expect(q.ok).toBe(false);
         expect(q.reasons).toContain('empty');
+        expect(q.score).toBe(0);
     });
 
-    it('헤딩/링크/단어 수가 모두 충족되면 ok=true', () => {
-        const filler = '이것은 테스트 본문 내용을 충분히 채우기 위한 더미 단어 들이다 '.repeat(80);
-        const content = [
-            '## 개요',
-            `${filler} [[테스트A]] [[테스트B]]`,
-            '## 상세',
-            `${filler} [[링크A]], [[링크B]], [[링크C]], [[링크D]] 포함.`,
-            '## 역사',
-            `${filler} 역사 [[배경]] 설명.`,
-        ].join('\n');
-        const q = evaluateWikiContent(content);
+    it('세 지표를 모두 충족하면 ok=true, score=3', () => {
+        const q = evaluateWikiContent(body(700, 6, 20), 'en');
         expect(q.ok).toBe(true);
-        expect(q.headings).toBeGreaterThanOrEqual(3);
-        expect(q.links).toBeGreaterThanOrEqual(5);
-        expect(q.words).toBeGreaterThanOrEqual(400);
+        expect(q.score).toBe(3);
     });
 
     it('헤딩이 부족하면 reasons에 포함', () => {
-        const content = '평문만 있고 헤딩 없음. [[A]] [[B]] [[C]] [[D]] [[E]]';
-        const q = evaluateWikiContent(content);
+        const q = evaluateWikiContent('평문만 있고 헤딩 없음. [[A]] [[B]] [[C]] [[D]] [[E]]', 'en');
         expect(q.ok).toBe(false);
         expect(q.reasons.some(r => r.startsWith('headings='))).toBe(true);
     });
 
     it('링크가 부족하면 reasons에 포함', () => {
-        const content = ['## A', '## B', '## C', '본문 단어들을 채워서 '.repeat(100)].join('\n');
-        const q = evaluateWikiContent(content);
+        const q = evaluateWikiContent(body(700, 3, 1), 'en');
         expect(q.reasons.some(r => r.startsWith('links='))).toBe(true);
     });
 
     it('단어가 부족하면 reasons에 포함', () => {
-        const content = '## A\n## B\n## C\n짧음 [[A]] [[B]] [[C]] [[D]] [[E]]';
-        const q = evaluateWikiContent(content);
+        const q = evaluateWikiContent(body(50), 'en');
         expect(q.reasons.some(r => r.startsWith('words='))).toBe(true);
+    });
+
+    // ─── 언어별 임계값 ────────────────────────────────────────────
+
+    it('같은 분량이라도 한국어는 통과하고 영어는 미달한다', () => {
+        // 400어절: 한국어 임계(300)는 넘지만 영어 임계(500)에는 못 미친다.
+        // 공백 분리로 어절을 세기 때문에 한국어 문서가 구조적으로 짧게 집계되는 것을 보정한다.
+        const content = body(400, 6, 10);
+        expect(evaluateWikiContent(content, 'ko').ok).toBe(true);
+        expect(evaluateWikiContent(content, 'en').ok).toBe(false);
+    });
+
+    it('미달 사유에 해당 언어의 임계값이 찍힌다', () => {
+        expect(evaluateWikiContent(body(100), 'ko').reasons).toContain('words=100<300');
+        expect(evaluateWikiContent(body(100), 'en').reasons).toContain('words=100<500');
+    });
+
+    it('모르는 언어는 기본 임계값을 쓴다', () => {
+        const content = body(400, 6, 10);
+        expect(evaluateWikiContent(content, 'ja').ok).toBe(false);
+        expect(evaluateWikiContent(content).ok).toBe(false);
+    });
+
+    // ─── 종합 점수 ────────────────────────────────────────────────
+
+    it('임계를 넘어선 몫은 점수에 보태지지 않는다', () => {
+        // 링크 100개짜리와 링크 5개짜리가 같은 점수여야, 링크 남발로
+        // 헤딩 부족을 상쇄하는 경로가 막힌다.
+        const many = evaluateWikiContent(body(700, 6, 100), 'en');
+        const enough = evaluateWikiContent(body(700, 6, 5), 'en');
+        expect(many.score).toBe(enough.score);
+    });
+
+    it('길지만 구조가 무너진 본문은 짧지만 온전한 본문보다 점수가 낮다', () => {
+        const structured = evaluateWikiContent(body(480, 6, 20), 'en'); // 분량만 살짝 미달
+        const sprawling = evaluateWikiContent(body(900, 1, 2), 'en');   // 길지만 헤딩·링크 붕괴
+        expect(structured.ok).toBe(false);
+        expect(sprawling.ok).toBe(false);
+        expect(structured.score).toBeGreaterThan(sprawling.score);
     });
 });
